@@ -1,0 +1,965 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>00 Schn31der</title>
+        <script src="https://unpkg.com/wavesurfer.js@7"></script>
+        <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
+        <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/zoom.min.js"></script>
+        <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/timeline.min.js"></script>
+        <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/minimap.min.js"></script>
+        <script src="config.js"></script>
+        <script src="get_wav_bytes.js"></script>
+        <script src="//cdnjs.cloudflare.com/ajax/libs/seedrandom/3.0.5/seedrandom.min.js"></script>
+        <!-- <script src="libflac.js"></script> -->
+
+        <style type="text/css">
+            body {
+                background-color: black;
+                color: white;
+            }
+
+            #waveform {
+                font-size: 10px;
+            }
+
+            #waveform ::part(region-content) {
+                width: 99%;
+                text-align: justify;
+                margin-top: 0 !important;
+                font-size: 14px;
+                color: white;
+            }
+
+            #waveform ::part(region-content):after {
+                content: "";
+                display: inline-block;
+                width: 100%;
+            }
+
+            .tools {
+                margin-top: 10px;
+                float: left;
+                padding: 0 10px;
+                border-right: 2px solid grey;
+            }
+
+            .tools:first-child {
+                padding-left: 0;
+            }
+
+            #transcribing {
+                clear: both;
+            }
+        </style>
+    </head>
+    <body>
+        <input id="open-file" type="file" accept=".wav,.mp3,.webm,.ogg,.flac">
+        <button id="save-wav">Save as WAV</button>
+        <span id="min-px-per-sec"></span>
+
+        <div id="waveform"></div>
+
+        <div id="toolbar">
+            <div id="playpause" class="tools">
+                <button id="pause">Play / Pause</button>
+            </div>
+            <div id="copypaste" class="tools">
+                <button id="copy" class="tool for-selection" disabled>Copy</button>
+                <button id="paste" class="tool" disabled>Paste</button>
+                <button id="cut" class="tool for-selection" disabled>Cut</button>
+            </div>
+            <div id="effects" class="tools">
+                <button id="strangle" class="tool for-selection" disabled>Strangle</button>
+                <button id="insert-silence" class="tool">Insert silence</button>
+            </div>
+            <div class="tools">
+                <button id="undo" class="tool" disabled>Undo</button>
+            </div>
+
+            <div id="transcribing" style="display: none">Transcribing..</div>
+        </div>
+
+        <script>
+            const SAMPLE_RATE = 44_100
+
+            async function getAudioForURL(url) {
+                const response = await fetch(url)
+                const buffer = await response.arrayBuffer()
+
+                const ctx = new AudioContext({
+                    sampleRate: SAMPLE_RATE,
+                    numChannels: 1
+                })
+                const audioBuffer = await ctx.decodeAudioData(buffer)
+                return audioBuffer
+            }
+
+            async function loadDecodedBuffer(waveSurfer, audioBuffer) {
+                const wavBytes = getWavBytes(audioBuffer.getChannelData(0).buffer, {
+                    isFloat: true,       // floating point or 16-bit integer
+                    numChannels: 1,
+                    sampleRate: 44100,
+                })
+                const wavBlob = new Blob([wavBytes], { type: 'audio/wav' })
+                const peaks = [ audioBuffer.getChannelData(0) ]
+                const duration = audioBuffer.duration
+                await waveSurfer.loadBlob(wavBlob, peaks, duration)
+
+                return wavBlob
+            }
+
+            async function copy(audioBuffer, startSeconds, endSeconds) {
+                const data = audioBuffer.getChannelData(0)
+                const start = Math.floor(startSeconds * audioBuffer.sampleRate)
+                const end = Math.floor(endSeconds * audioBuffer.sampleRate)
+                const dataToCopy = data.subarray(start, end)
+                const length = end - start
+
+                const newData = new Float32Array(length)
+                newData.set(dataToCopy)
+
+                return newData
+            }
+
+            async function paste(audioBuffer, copiedData, currentTime) {
+                const currentData = audioBuffer.getChannelData(0)
+                const seconds = copiedData.length / audioBuffer.sampleRate
+                const start = Math.floor(currentTime * audioBuffer.sampleRate)
+                const end = Math.floor((currentTime + seconds) * audioBuffer.sampleRate)
+
+                const before = currentData.subarray(0, start)
+                const after = currentData.subarray(start)
+
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+                const newAudioBuffer = audioCtx.createBuffer(1, before.length + copiedData.length + after.length, audioBuffer.sampleRate)
+                const newData = newAudioBuffer.getChannelData(0)
+
+                newData.set(before)
+                newData.set(copiedData, before.length)
+                newData.set(after, before.length + copiedData.length)
+
+                return newAudioBuffer
+            }
+
+            async function cut(audioBuffer, startSeconds, endSeconds) {
+                const data = audioBuffer.getChannelData(0)
+                const start = Math.floor(startSeconds * audioBuffer.sampleRate)
+                const end = Math.floor(endSeconds * audioBuffer.sampleRate)
+                const before = data.subarray(0, start)
+                const after = data.subarray(end)
+                const dataToCopy = data.subarray(start, end)
+
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+                const newAudioBuffer = audioCtx.createBuffer(1, before.length + after.length, audioBuffer.sampleRate)
+                const newData = newAudioBuffer.getChannelData(0)
+                newData.set(before)
+                newData.set(after, before.length)
+
+                copiedData = new Float32Array(dataToCopy.length)
+                copiedData.set(dataToCopy)
+
+                return [newAudioBuffer, copiedData]
+            }
+
+            function fadeAudio(audioData, envelope) {
+                function lerp(a, b, t) {
+                    return a + (b - a) * t;
+                }
+
+                function fadeInOut(data, start, end, gainStart, gainEnd) {
+                    // console.debug("fadeInOut", start, end, gainStart, gainEnd)
+
+                    for (let i = start; i < end; i++) {
+                        const gain = lerp(gainStart, gainEnd, (i - start) / (end - start))
+                        if (i == start) console.debug("gain", i, gain, data[i], data[i] * gain / 100)
+                        data[i] *= gain / 100;
+                    }
+                }
+
+                for (let i = 0; i < envelope.length - 1; i++) {
+                    const fadeStart = Math.round(audioData.length * envelope[i][0] / 100)
+                    const fadeEnd = Math.round(audioData.length * envelope[i + 1][0] / 100)
+                    const gainStart = envelope[i][1]
+                    const gainEnd = envelope[i + 1][1]
+
+                    fadeInOut(audioData, fadeStart, fadeEnd, gainStart, gainEnd)
+                }
+            }
+
+            async function strangle(audioBuffer, startSeconds, endSeconds) {
+                const data = audioBuffer.getChannelData(0)
+                const start = Math.floor(startSeconds * audioBuffer.sampleRate)
+                const end = Math.floor(endSeconds * audioBuffer.sampleRate)
+
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+                const newAudioBuffer = audioCtx.createBuffer(1, data.length, audioBuffer.sampleRate)
+                const newData = newAudioBuffer.getChannelData(0)
+                newData.set(data)
+
+                const dataToChange = newData.subarray(start, end)
+                const envelope = [[0, 100], [10, 50], [15, 35], [26, 20], [36, 10], [50, 3], [64, 10], [74, 20], [85, 35], [90, 50], [100, 100]]
+                fadeAudio(dataToChange, envelope)
+
+                return newAudioBuffer
+            }
+
+            async function insertSilence(audioBuffer, startInSeconds, lengthInSeconds) {
+                const currentData = audioBuffer.getChannelData(0)
+                const start = Math.floor(startInSeconds * audioBuffer.sampleRate)
+                const end = Math.floor((startInSeconds + lengthInSeconds) * audioBuffer.sampleRate)
+                const length = (lengthInSeconds * audioBuffer.sampleRate)
+
+                const before = currentData.subarray(0, start)
+                const after = currentData.subarray(start)
+
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+                const newAudioBuffer = audioCtx.createBuffer(1, before.length + length + after.length, audioBuffer.sampleRate)
+                const newData = newAudioBuffer.getChannelData(0)
+
+                newData.set(before)
+                newData.set(after, before.length + length)
+
+                return newAudioBuffer
+            }
+
+            function stringHash(string) {
+                let hash = 0, i, chr
+
+                if (string.length === 0) return hash
+
+                for (i = 0; i < string.length; i++) {
+                    const chr = string.charCodeAt(i)
+                    hash = ((hash << 5) - hash) + chr
+                    hash |= 0 // Convert to 32bit integer
+                }
+
+                return hash
+            }
+
+            function hashToString(hash) {
+                return Array.from(new Uint8Array(hash)).map(byte =>
+                    ('00' + (byte & 0xFF).toString(16)).slice(-2)
+                ).join('');
+            }
+
+            async function checkCache(audioData) {
+                const crypto = window.crypto || window.msCrypto
+
+                const hash = hashToString(await crypto.subtle.digest('SHA-1', audioData))
+
+                const item = sessionStorage.getItem(hash)
+                if (item) {
+                    const json = JSON.parse(item)
+                    console.debug("found item for hash", hash, json)
+                    return json
+                } 
+            }
+
+            async function writeCache(audioData, json) {
+                const crypto = window.crypto || window.msCrypto
+
+                const hash = hashToString(await crypto.subtle.digest('SHA-1', audioData))
+
+                return sessionStorage.setItem(hash, JSON.stringify(json))
+            }
+
+            async function requestTranscribe(audioData, output="segments") {
+                const cachedJson = await checkCache(audioData)
+                if (cachedJson) return cachedJson
+
+                const TRANSCRIBE_URL = window.CONFIGURATION.transcribeURL
+
+                const lang = "de"
+                const url = TRANSCRIBE_URL + '?lang=' + lang + "&output=" + output + "&sampling-rate=44100&src_lang=de"
+                const response = await fetch(url, {
+                    method: 'POST',
+                    body: audioData,
+                    headers: {
+                        'Content-Type': 'audio/raw',
+                    },
+                })
+                const json = await response.json()
+                writeCache(audioData, json)
+                return json
+            }
+            
+            async function transcribeSegments(audioBuffer, segments, cb) {
+                document.getElementById("transcribing").style.display = "block"
+
+                return new Promise((resolve) => {
+                    const completeData = audioBuffer.getChannelData(0)
+                    const scale = completeData.length / audioBuffer.duration
+
+                    const transcribeSegment = (i) => {
+                        if (i === segments.length) {
+                            console.log("Transcription complete.")
+                            document.getElementById("transcribing").style.display = "none"
+                            return resolve()
+                        }
+
+                        const segment = segments[i]
+                        console.debug("Transcribing", segment)
+                        const data = completeData.slice(segment.start * scale, segment.end * scale)
+
+                        requestTranscribe(data, "text").then((json) => {
+                            transcribeSegment(i+1)
+
+                            segment.text = json.text
+                            cb({
+                                ...segment,
+                                text: json.text
+                            })
+                        })
+
+                    }
+
+                    transcribeSegment(0)
+                })
+            }
+
+            // const seedBase = Math.random()
+            let seedBase = 398149
+
+            function deterministicValues(input) {
+                // Calculate the seed based on the input value
+                const seed = (input - 1) * seedBase
+                const rng = new Math.seedrandom(seed);
+
+                const value1 = Math.round(rng() * 255);
+                const value2 = Math.round(rng() * 255);
+                const value3 = Math.round(rng() * 255);
+
+                return [value1, value2, value3];
+            }
+
+            function deterministicRgbaValue(input) {
+                const colors = deterministicValues(input)
+                return `rgba(${colors[0]}, ${colors[1]}, ${colors[2]}, 0.5)`
+            }
+
+            function addRegionForSegment(wsRegions, segment) {
+                const region = wsRegions.addRegion({
+                    id: `segment-${segment.i}`,
+                    start: segment.start,
+                    end: segment.end,
+                    content: segment.text,
+                    color: deterministicRgbaValue(segment.i),
+                    drag: false,
+                    resize: false,
+                })
+                region.element.style.pointerEvents = 'none'
+            }
+
+            function updateRegionForSegment(wsRegions, segment) {
+                const region = wsRegions.getRegions().find((region) => region.id === `segment-${segment.i}`)
+                region.setContent(segment.text)
+            }
+
+            function addRegionsForSegments(wsRegions, segments) {
+                console.debug("addRegionsForSegments", segments)
+                segments.forEach((segment) => {
+                    addRegionForSegment(wsRegions, segment)
+                })
+            }
+
+            // function getSegmentRegions(wsRegions) {
+            //     return wsRegions.getRegions().filter(region => region.id.startsWith("segment-"))
+            // }
+
+            function cutSegments(segments, selectionStart, selectionEnd) {
+                console.debug("cutSegments", segments, selectionStart, selectionEnd)
+
+                const selectionLength = selectionEnd - selectionStart
+
+                console.log("Cutting out", selectionStart, selectionEnd, selectionLength)
+
+                const overlappingSegments = segments.filter(segment => segment.start < selectionEnd && segment.end > selectionStart)
+
+                overlappingSegments.forEach(segment => {
+                    console.log("Overlapping segment", segment)
+
+                    const [oldStart, oldEnd] = [segment.start, segment.end]
+                    const oldLength = oldEnd - oldStart
+
+                    if (segment.start >= selectionStart) {
+                        if(segment.end <= selectionEnd) {
+                            console.debug("Case 1 - complete overlap")
+                            console.debug("=> Completely remove segment")
+
+                            const index = segments.indexOf(segment)
+                            segments.splice(index, 1)
+                        } else {
+                            console.debug("Case 2 - selection start before segment and selection end inside segment")
+                            const selectionBeforeSegment = segment.start - selectionStart
+                            console.debug("=> Decrease start of segment according to selection part before the segment", selectionBeforeSegment)
+                            segment.start -= selectionBeforeSegment
+                        }
+                    } else if (selectionEnd < segment.end) {
+                        console.debug("Case 3 - selection start and end inside segment")
+                        console.debug("=> Decrease segment end according to selection length")
+                        segment.end -= selectionLength
+                    } else {
+                        console.debug("Case 4 - selection start is inside segment, selection end is after segment end")
+                        console.debug("=> Set segment end to selection start")
+                        const endPercent = 1 - ((segment.end - selectionStart) / oldLength)
+                        segment.end = selectionStart
+                    }
+                })
+
+                const segmentsAfter = segments.filter(segment => segment.start >= selectionEnd)
+                segmentsAfter.forEach(segment => {
+                    console.debug("Moving segment", segment.start, segment.end)
+                    console.debug("to", segment.start - selectionLength, segment.end - selectionLength)
+                    segment.start -= selectionLength
+                    segment.end -= selectionLength
+                })
+
+                return overlappingSegments
+            }
+
+            function pasteIntoSegments(segments, startSeconds, lengthInSeconds) {
+                const endSeconds = startSeconds + lengthInSeconds
+
+                const containingSegment = segments.find(segment => segment.start < startSeconds  && segment.end > endSeconds)
+                let newSegment
+                if (containingSegment) {
+                    containingSegment.end += lengthInSeconds
+                    console.debug("paste containing segment", containingSegment)
+
+                }
+
+                if (!containingSegment) {
+                    const previousSegment = segments.find(segment => segment.start < startSeconds)
+                    const previousSegmentIndex = segments.indexOf(previousSegment)
+
+                    newSegment = {
+                        i: previousSegment.i + 1,
+                        start: startSeconds,
+                        end: endSeconds
+                    }
+                    segments.splice(previousSegmentIndex + 1, 0, newSegment)
+                }
+
+                const segmentsAfter = segments.filter(segment => segment.start > startSeconds)
+                segmentsAfter.forEach(segment => {
+                    console.debug("Moving segment", segment.start, segment.end)
+                    console.debug("to", segment.start + lengthInSeconds, segment.end + lengthInSeconds)
+                    if (!containingSegment)
+                        segment.i += 1
+                    segment.start += lengthInSeconds
+                    segment.end += lengthInSeconds
+                })
+
+                return containingSegment || newSegment
+            }
+
+            function insertSilenceIntoSegments(segments, startSeconds, lengthInSeconds) {
+                const endSeconds = startSeconds + lengthInSeconds
+                const containingSegment = segments.find(segment => segment.start < startSeconds && segment.end > endSeconds)
+                if (containingSegment) {
+                    console.debug("insert silence containing segment", containingSegment)
+                    containingSegment.end += lengthInSeconds
+                }
+
+                const segmentsAfter = segments.filter(segment => segment.start > startSeconds)
+                segmentsAfter.forEach(segment => {
+                    console.debug("Moving segment", segment.start, segment.end)
+                    console.debug("to", segment.start + lengthInSeconds, segment.end + lengthInSeconds)
+                    segment.start += lengthInSeconds
+                    segment.end += lengthInSeconds
+                })
+            }
+
+            // function findSegmentRegion(wsRegions, time) {
+            //     return getSegmentRegions(wsRegions).reverse().find(region => region.start <= time)
+            // }
+
+            function extractSegments(data, duration) {
+                const minValue = 0.02
+                const minSilenceDuration = 0.5
+                const mergeDuration = 0.2
+                const scale = duration / data.length
+
+                let start = 0
+                let end = 0
+                let isSilent = false
+                const silentRegions = []
+
+                for (let i=0; i<data.length; i++) {
+                    if (data[i] < minValue) {
+                        if (!isSilent) {
+                            start = i
+                            isSilent = true
+                        } 
+                    } else if (isSilent) {
+                        end = i
+                        isSilent = false
+                        if (scale * (end - start) > minSilenceDuration) {
+                            silentRegions.push({
+                                start: scale * start,
+                                end: scale * end
+                            })
+                        }
+                    }
+                }
+
+                // Catch last silent region
+                if (isSilent) {
+                    silentRegions.push({
+                        start: scale * start,
+                        end: scale * duration
+                    })
+                }
+
+                console.debug("silentRegions", silentRegions)
+
+                // Merge silent regions that are close together
+                const mergedRegions = []
+                let lastRegion = null
+                for (let i = 0; i < silentRegions.length; i++) {
+                    if (lastRegion && silentRegions[i].start - lastRegion.end < mergeDuration) {
+                        lastRegion.end = silentRegions[i].end
+                    } else {
+                        lastRegion = silentRegions[i]
+                        mergedRegions.push(lastRegion)
+                    }
+                }
+
+                console.debug("mergedRegions", mergedRegions)
+
+                const regions = []
+                let lastEnd = 0
+                for (let i = 0; i < mergedRegions.length; i++) {
+                    if (lastEnd !== mergedRegions[i].start) {
+                        regions.push({
+                            i,
+                            start: lastEnd,
+                            end: mergedRegions[i].start,
+                        })
+                    }
+                    lastEnd = mergedRegions[i].end
+                }
+
+                return regions
+            }
+
+            // function encodeAsFlac(audioBuffer) {
+            //     const
+            //         CHANNELS = 1,
+            //         SAMPLERATE = 16000,
+            //         COMPRESSION = 5,
+            //         BPS = 16,
+            //         VERIFY = true,
+            //         BLOCK_SIZE = 0
+            //         // flac_ok = 1,
+            //         // USE_OGG = false;
+
+
+            //     const encBuffer = [];
+
+            //     flac_encoder = Flac.create_libflac_encoder(SAMPLERATE, CHANNELS, BPS, COMPRESSION, 0, VERIFY, BLOCK_SIZE);
+            //     if (flac_encoder != 0){
+            //         const write_callback_fn = function(encodedData /*Uint8Array*/, bytes, samples, current_frame){
+            //             //store all encoded data "pieces" into a buffer
+            //             encBuffer.push(encodedData);
+            //         }
+
+            //         status_encoder = Flac.init_encoder_stream(flac_encoder,
+            //             write_callback_fn,    //required callback(s)
+            //             // metadata_callback_fn  //optional callback(s)
+            //         )
+            //         if (status_encoder == 0) {
+            //             //convert input data to signed int data, in correspondence to the bps setting (i.e. in this case int32)
+            //             // see API docs on FLAC__stream_encoder_process_interleaved() for more details
+            //             // const buffer = audioBuffer.getChannelData(0)
+            //             const buffer = [1,-1]
+            //             var buf_length = buffer.length;
+            //             var buffer_i16 = new Int16Array(buf_length);
+            //             var view = new DataView(buffer_i16.buffer);
+            //             var volume = 1;
+            //             var index = 0;
+            //             for (var i = 0; i < buf_length; i++){
+            //                 view.setInt16(index, (buffer[i] * (32767 * volume)), true);
+            //                 index += 2
+            //             }
+            //             console.log("new buffer", buffer_i16)
+
+            //             flac_return = Flac.FLAC__stream_encoder_process_interleaved(flac_encoder, buffer_i16, buf_length / CHANNELS);
+            //             if (flac_return == 0) {
+            //                 if (Flac.FLAC__stream_encoder_finish(flac_encoder)) {
+            //                     Flac.FLAC__stream_encoder_delete(flac_encoder)
+            //                     console.debug("Writing flac done", encBuffer.length)
+            //                     console.debug(encBuffer)
+            //                 }
+            //             } else {
+            //                 const state = Flac.FLAC__stream_encoder_get_state()
+            //                 console.error("FLAC__stream_encoder_process_interleaved failed", state)
+            //             }
+            //         } else {
+            //             console.error("Flac.init_encoder_stream failed", status_encoder)
+            //         }
+            //     } else {
+            //         Flac.FLAC__stream_encoder_delete(flac_encoder)
+            //         console.error("Error initializing the encoder");
+            //     }
+            // }
+
+            const previousStates = []
+
+            function rememberState(audioBuffer, segments) {
+                previousStates.unshift({
+                    audioBuffer,
+                    segments: JSON.parse(JSON.stringify(segments))
+                })
+            }
+
+            function getPreviousState() {
+                if (!previousStates.length) return
+
+                return previousStates.shift()
+            }
+
+            async function init() {
+                let wavBlob
+                let segments
+                let copiedData
+                let transcribed = false
+
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+                let audioBuffer = audioCtx.createBuffer(1, 1, SAMPLE_RATE)
+
+                const waveSurfer = new WaveSurfer({
+                    container: '#waveform',
+                    waveColor: '#4F4A85',
+                    progressColor: '#383351',
+                    cursorColor: '#ddd5e9',
+
+                    plugins: [
+                        WaveSurfer.Timeline.create({
+                            primaryLabelInterval: 1,
+                            // timeInterval: 0.1,
+                            // formatTimeCallback: (seconds) => seconds        // TODO Remove (only debugging)
+                        }),
+                        WaveSurfer.Minimap.create({
+                            height: 20,
+                            waveColor: '#ddd',
+                            progressColor: '#999',
+                            // the Minimap takes all the same options as the WaveSurfer itself
+                        }),
+                    ],
+                    height: 512
+                })
+
+                const wsRegions = waveSurfer.registerPlugin(WaveSurfer.Regions.create())
+
+                waveSurfer.registerPlugin(
+                    WaveSurfer.Zoom.create({
+                        // the amount of zoom per wheel step, e.g. 0.5 means a 50% magnification per scroll
+                        scale: 0.5,
+                        // Optionally, specify the maximum pixels-per-second factor while zooming
+                        maxZoom: 500,
+                    }),
+                )
+                const $minPxPerSec = document.querySelector('#min-px-per-sec')
+                waveSurfer.on('zoom', (minPxPerSec) => {
+                    $minPxPerSec.textContent = `Zoom: ${Math.round(minPxPerSec)}`
+                })
+
+                segments = extractSegments(audioBuffer.getChannelData(0), audioBuffer.duration)
+                console.debug("found segments", segments)
+
+                wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+
+                waveSurfer.on('decode', async () => {
+                    console.log("decoded")
+
+                    wsRegions.clearRegions()
+
+                    if (!transcribed) {
+                        console.debug("transcribeSegments", segments)
+                        segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
+                        await transcribeSegments(audioBuffer, segments, (segment) => {
+                            updateRegionForSegment(wsRegions, segment)
+                        })
+
+                        transcribed = true
+                    }
+                })
+
+                let currentRegion;
+
+                const removeSelection = wsRegions.enableDragSelection({
+                        color: 'rgba(221, 213, 233, 0.5)',
+                })
+
+                wsRegions.on('region-created', (region) => {
+                    if (region.id.startsWith("segment-")) return
+
+                    if (currentRegion) {
+                        try {
+                            currentRegion.remove()
+                        } catch {
+                            console.error("FIXME Tried to remove non-existing region")
+                        }
+                    }
+
+                    if (region.start < 0.02) region.setOptions({start: 0})
+                    console.log('Created region', region)
+
+                    currentRegion = region
+
+                    region.on('over', () => {
+                        console.log("Over region", region)
+                    })
+
+                    document.querySelectorAll(".tool.for-selection").forEach(($el) => $el.disabled = "")
+                })
+
+                wsRegions.on("region-clicked", (region, e) => {
+                    if (region.id.startsWith("segment-")) return
+                    e.stopPropagation() // prevent triggering a click on the waveform
+
+                    console.log("region-clicked", region, e)
+                    region.play()
+                })
+
+                wsRegions.on("region-double-clicked", (region, e) => {
+                    // FIXME This somehow does not trigger on segments
+                    console.log("region-double-clicked", region, e)
+
+                    if (region.id.startsWith("segment-")) {
+                        region.play()
+                    } else {
+                        region.remove()
+                        currentRegion = undefined
+                        document.querySelectorAll(".tool.for-selection").forEach(($el) => $el.disabled = "disabled")
+                    }
+
+                })
+
+                wsRegions.on('region-out', (region) => {
+                    if (region.id.startsWith("segment-")) return
+                    console.log("region-out", region)
+
+                    waveSurfer.pause()
+                })
+                
+                waveSurfer.on('dblclick', async () => {
+                    await waveSurfer.playPause()
+                })
+
+                waveSurfer.on('click', () => {
+                    if (waveSurfer.isPlaying())
+                        waveSurfer.pause()
+                })
+
+                document.getElementById("pause").addEventListener("click", () => {
+                    waveSurfer.playPause()
+                })
+
+                document.addEventListener("keyup", async (event) => {
+                    if (event.keyCode === 32) {
+                        event.preventDefault()
+                        await waveSurfer.playPause()
+                    }
+                })
+
+                document.getElementById("copy").addEventListener("click", async() => {
+                    const [start, end] = [currentRegion.start, currentRegion.end]
+
+                    copiedData = await copy(audioBuffer, start, end)
+
+                    console.debug("copied audio from / until", start, end)
+                    
+                    document.getElementById("paste").disabled = ""
+                })
+
+                document.getElementById("paste").addEventListener("click", async() => {
+                    wsRegions.clearRegions()
+
+                    rememberState(audioBuffer, segments)
+
+                    const start = waveSurfer.getCurrentTime()
+                    const length = copiedData.length / audioBuffer.sampleRate
+
+                    console.debug("Pasting audio start / length", start, length)
+
+                    const affectedSegment = pasteIntoSegments(segments, start, length)
+
+                    audioBuffer = await paste(audioBuffer, copiedData, start)
+
+                    console.log("Loading new audio buffer", audioBuffer)
+
+                    wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+
+                    waveSurfer.setTime(start)
+
+                    if (affectedSegment) {
+                        segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
+                        await transcribeSegments(audioBuffer, [affectedSegment], (updatedSegment) => {
+                            const segment = segments.find((s) => s.i === updatedSegment.i)
+                            if (segment) {
+                                console.debug("Updating segment text for", segment, updatedSegment.text)
+                                segment.text = updatedSegment.text
+                                updateRegionForSegment(wsRegions, segment)
+                            }
+                        })
+                    }
+
+                    // addRegionsForSegments(wsRegions, segments)
+                })
+
+                document.getElementById("cut").addEventListener("click", async () => {
+                    if(!currentRegion) return
+
+                    document.getElementById("cut").disabled = "disabled"
+
+                    const [start, end] = [currentRegion.start, currentRegion.end]
+
+                    currentRegion.remove()
+                    currentRegion = undefined
+
+                    wsRegions.clearRegions()
+
+                    rememberState(audioBuffer, segments)
+
+                    const overlappingSegments = cutSegments(segments, start, end)
+
+                    const result = await cut(audioBuffer, start, end)
+                    audioBuffer = result[0]
+                    copiedData = result[1]
+
+                    console.log("Loading new audio buffer", audioBuffer)
+
+                    wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+
+                    waveSurfer.setTime(start)
+                    
+                    segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
+                    await transcribeSegments(audioBuffer, overlappingSegments, (updatedSegment) => {
+                        const segment = segments.find((s) => s.i === updatedSegment.i)
+                        if (segment) {
+                            console.debug("Updating segment text for", segment, updatedSegment.text)
+                            segment.text = updatedSegment.text
+                            updateRegionForSegment(wsRegions, segment)
+                        }
+                    })
+
+                    addRegionsForSegments(wsRegions, segments)
+
+                    document.getElementById("paste").disabled = ""
+                    document.getElementById("undo").disabled = ""
+                })
+
+                document.getElementById("undo").addEventListener("click", async () => {
+                    const currentTime = waveSurfer.getCurrentTime()
+
+                    if (previousStates.length == 0) return
+
+                    ({audioBuffer, segments} = getPreviousState())
+                    wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+
+                    addRegionsForSegments(wsRegions, segments)
+
+                    waveSurfer.setTime(currentTime)
+
+                    if (previousStates.length == 0)
+                        document.getElementById("undo").disabled = "disabled"
+                })
+
+                document.getElementById("strangle").addEventListener("click", async() => {
+                    const [start, end] = [currentRegion.start, currentRegion.end]
+
+                    rememberState(audioBuffer, segments)
+
+                    audioBuffer = await strangle(audioBuffer, start, end)
+
+                    console.debug("strangled audio from / until", start, end)
+
+                    wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+
+                    waveSurfer.setTime(start)
+
+                    addRegionsForSegments(wsRegions, segments)
+                })
+
+                document.getElementById("insert-silence").addEventListener("click", async() => {
+                    const length = parseFloat(prompt("Silence duration in seconds:", "1.0"))
+
+                    wsRegions.clearRegions()
+
+                    const start = waveSurfer.getCurrentTime()
+
+                    rememberState(audioBuffer, segments)
+
+                    console.debug("Insert silence start / length", start, length)
+
+                    insertSilenceIntoSegments(segments, start, length)
+
+                    audioBuffer = await insertSilence(audioBuffer, start, length)
+
+                    console.log("Loading new audio buffer", audioBuffer)
+
+                    wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+
+                    waveSurfer.setTime(start)
+
+                    addRegionsForSegments(wsRegions, segments)
+                })
+
+                document.getElementById("open-file").addEventListener("change", (event) => {
+                    const file = event.target.files[0]
+                    seedBase = stringHash(file.name)
+                    console.debug("Setting seedBase", seedBase)
+
+                    const reader = new FileReader()
+                    reader.addEventListener("loadend", async () => {
+                        const ctx = new AudioContext({
+                            sampleRate: SAMPLE_RATE,
+                            numChannels: 1
+                        })
+
+                        audioBuffer = await ctx.decodeAudioData(reader.result)
+
+                        segments = extractSegments(audioBuffer.getChannelData(0), audioBuffer.duration)
+                        console.debug("found segments", segments)
+
+                        transcribed = false
+                        wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+                    })
+                    reader.readAsArrayBuffer(file)
+                })
+
+                document.getElementById("save-wav").addEventListener("click", async () => {
+
+                    if (typeof window.showSaveFilePicker !== "undefined") {
+                        // Use Filesystem API as it is available
+
+                        const newHandle = await window.showSaveFilePicker();
+                        const writableStream = await newHandle.createWritable();
+
+                        await writableStream.write(wavBlob);
+                        await writableStream.close();
+
+                    } else {
+                        const url = URL.createObjectURL(wavBlob);
+
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = 'processed.wav'
+                        link.style.display = 'none';
+
+                        document.body.appendChild(link);
+
+                        link.dispatchEvent(new MouseEvent('click'));
+
+                        document.body.removeChild(link);
+                    }
+                })
+            }
+
+            init()
+        </script>
+    </body>
+</html>
