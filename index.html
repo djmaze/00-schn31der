@@ -647,20 +647,18 @@
                             progressColor: '#999',
                             // the Minimap takes all the same options as the WaveSurfer itself
                         }),
+                      WaveSurfer.Zoom.create({
+                          // the amount of zoom per wheel step, e.g. 0.5 means a 50% magnification per scroll
+                          scale: 0.5,
+                          // Optionally, specify the maximum pixels-per-second factor while zooming
+                          maxZoom: 500,
+                      }),
                     ],
                     height: 512
                 })
 
                 const wsRegions = waveSurfer.registerPlugin(WaveSurfer.Regions.create())
 
-                waveSurfer.registerPlugin(
-                    WaveSurfer.Zoom.create({
-                        // the amount of zoom per wheel step, e.g. 0.5 means a 50% magnification per scroll
-                        scale: 0.5,
-                        // Optionally, specify the maximum pixels-per-second factor while zooming
-                        maxZoom: 500,
-                    }),
-                )
                 const $minPxPerSec = document.querySelector('#min-px-per-sec')
                 waveSurfer.on('zoom', (minPxPerSec) => {
                     $minPxPerSec.textContent = `Zoom: ${Math.round(minPxPerSec)}`
@@ -673,6 +671,8 @@
 
                 waveSurfer.on('decode', async () => {
                     console.log("decoded")
+
+                    waveSurfer.zoom(100)
 
                     wsRegions.clearRegions()
 
