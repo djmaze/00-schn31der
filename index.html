@@ -759,9 +759,12 @@
                 })
 
                 document.addEventListener("keyup", async (event) => {
-                    if (event.keyCode === 32) {
+                    if (event.keyCode === 32) {    // space
                         event.preventDefault()
                         await waveSurfer.playPause()
+                    } else if (event.keyCode === 46) {  // del
+                      event.preventDefault()
+                      await cutCommand()
                     }
                 })
 
@@ -810,7 +813,7 @@
                     // addRegionsForSegments(wsRegions, segments)
                 })
 
-                document.getElementById("cut").addEventListener("click", async () => {
+                async function cutCommand() {
                     if(!currentRegion) return
 
                     document.getElementById("cut").disabled = "disabled"
@@ -850,7 +853,9 @@
 
                     document.getElementById("paste").disabled = ""
                     document.getElementById("undo").disabled = ""
-                })
+                }
+
+                document.getElementById("cut").addEventListener("click", cutCommand.bind(this))
 
                 document.getElementById("undo").addEventListener("click", async () => {
                     const currentTime = waveSurfer.getCurrentTime()
