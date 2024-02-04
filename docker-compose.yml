@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    env_file: .env
+    image: mazzolino/00_schn31der
+    volumes:
+      - .:/usr/share/nginx/html
+    ports:
+      - 8011:80/tcp

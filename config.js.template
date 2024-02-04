@@ -1,4 +1,4 @@
 window.CONFIGURATION = {
-  "transcribeURL": "/url/to/transcribe",
-  "textHighlighterURL": "/url/to/find_paragraphs.js"
+  "transcribeURL": "${TRANSCRIBE_URL}",
+  "textHighlighterURL": "${TEXT_HIGHLIGHTER_URL}"
 }
