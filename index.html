@@ -66,6 +66,15 @@
                 <button id="save-wav" class="tool">Save as WAV</button>
             </div>
 
+            <div id="transcription" class="tools">
+                <span class="tool">Transcription:</span>
+                <select id="transcription-lang" class="tool">
+                    <option value="">–</option>
+                    <option value="en">English</option>
+                    <option value="de">German</option>
+                </select>
+            </div>
+
             <div id="zoom" class="tools">
                 <span id="min-px-per-sec" class="tool"></span>
             </div>
@@ -282,13 +291,12 @@
                 return sessionStorage.setItem(hash, JSON.stringify(json))
             }
 
-            async function requestTranscribe(audioData, output="segments") {
+            async function requestTranscribe(audioData, lang, output="segments") {
                 const cachedJson = await checkCache(audioData)
                 if (cachedJson) return cachedJson
 
                 const TRANSCRIBE_URL = window.CONFIGURATION.transcribeURL
 
-                const lang = "de"
                 const url = TRANSCRIBE_URL + '?lang=' + lang + "&output=" + output + "&sampling-rate=44100&src_lang=de"
                 const response = await fetch(url, {
                     method: 'POST',
@@ -303,6 +311,9 @@
             }
             
             async function transcribeSegments(audioBuffer, segments, cb) {
+                const lang = document.getElementById("transcription-lang").value
+                if (!lang) return
+
                 document.getElementById("transcribing").style.display = "block"
 
                 return new Promise((resolve) => {
@@ -320,7 +331,7 @@
                         console.debug("Transcribing", segment)
                         const data = completeData.slice(segment.start * scale, segment.end * scale)
 
-                        requestTranscribe(data, "text").then((json) => {
+                        requestTranscribe(data, lang, "text").then((json) => {
                             transcribeSegment(i+1)
 
                             segment.text = json.text
