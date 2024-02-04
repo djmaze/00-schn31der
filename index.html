@@ -8,6 +8,7 @@
         <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/zoom.min.js"></script>
         <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/timeline.min.js"></script>
         <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/minimap.min.js"></script>
+        <script src="simplepeer.min.js"></script>
         <script src="config.js"></script>
         <script src="get_wav_bytes.js"></script>
         <script src="//cdnjs.cloudflare.com/ajax/libs/seedrandom/3.0.5/seedrandom.min.js"></script>
@@ -37,9 +38,14 @@
                 width: 100%;
             }
 
+            .toolbar {
+                margin: 10px 0;
+                display: flex;
+                justify-content: flex-start;
+            }
+
             .tools {
-                margin-top: 10px;
-                float: left;
+                flex: none;
                 padding: 0 10px;
                 border-right: 2px solid grey;
             }
@@ -54,13 +60,25 @@
         </style>
     </head>
     <body>
-        <input id="open-file" type="file" accept=".wav,.mp3,.webm,.ogg,.flac">
-        <button id="save-wav">Save as WAV</button>
-        <span id="min-px-per-sec"></span>
+        <div class="toolbar">
+            <div id="open-save" class="tools">
+                <input id="open-file" class="tool" type="file" accept=".wav,.mp3,.webm,.ogg,.flac">
+                <button id="save-wav" class="tool">Save as WAV</button>
+            </div>
+
+            <div id="zoom" class="tools">
+                <span id="min-px-per-sec" class="tool"></span>
+            </div>
+
+            <div id="extras" class="tools">
+                <button id="connect-to-text-page" class="tool">Connect to text page</button>
+                <span id="connected-to-text-page" class="tool"></span>
+            </div>
+        </div>
 
         <div id="waveform"></div>
 
-        <div id="toolbar">
+        <div class="toolbar">
             <div id="playpause" class="tools">
                 <button id="pause">Play / Pause</button>
             </div>
@@ -625,6 +643,8 @@
                 let segments
                 let copiedData
                 let transcribed = false
+                let simplePeer
+                let simplePeerConnected = false
 
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
                 let audioBuffer = audioCtx.createBuffer(1, 1, SAMPLE_RATE)
@@ -736,6 +756,13 @@
                         document.querySelectorAll(".tool.for-selection").forEach(($el) => $el.disabled = "disabled")
                     }
 
+                })
+
+                wsRegions.on('region-in', (region) => {
+                  console.debug("Entered region", region.content)
+                  if (simplePeerConnected) {
+                    simplePeer.send(region.content.innerText)
+                  }
                 })
 
                 wsRegions.on('region-out', (region) => {
@@ -960,6 +987,67 @@
                         link.dispatchEvent(new MouseEvent('click'));
 
                         document.body.removeChild(link);
+                    }
+
+                    alert("Audio file has been saved.") 
+                })
+
+                document.getElementById("connect-to-text-page").addEventListener("click", async () => {
+                    document.getElementById("connect-to-text-page").disabled = true
+
+                    simplePeer = new SimplePeer({
+                        initiator: false,
+                        trickle: false
+                    })
+
+                    simplePeer.on('error', err => console.log('error', err))
+
+                    simplePeer.on('signal', async (data) => {
+                        console.log('SIGNAL', JSON.stringify(data))
+                        await navigator.clipboard.writeText(JSON.stringify(data))
+
+                        const text = `
+                        The answer code has been copied to your clipboard. These are the next steps: 
+
+                        1. Go back to the page with the text. 
+                            a. Paste the code from the clipboard into the text field in the popup.
+                            b. Hit "Submit".
+                        2. Click "Ok" here.
+
+                        The browser windows are now connected and you are ready to go!
+                        `.replace(/  +/g, '')
+                        alert(text)
+                    })
+
+                    simplePeer.on('connect', () => {
+                        console.log('CONNECTED')
+                        simplePeerConnected = true
+                        document.getElementById("connected-to-text-page").innerHTML = "Connected"
+                    })
+
+                    simplePeer.on('data', data => {
+                        console.log('data: ' + data)
+                    })
+
+                    const code = `const script = document.createElement("script"); script.src = "${window.CONFIGURATION.textHighlighterURL}"; document.querySelector("body").appendChild(script)`
+                    await navigator.clipboard.writeText(code)
+
+                    let text = `
+                    You are about to connect the editor to the page which contains the original text. The data for the connection has just been copied to your clipboard. These are the next steps: 
+
+                    1. In another browser window, load the page which contains the original text. 
+                        a. After the text is loaded, open the web developer console (F12)
+                        b. In the console, paste the text from your clipboard. Hit ENTER.
+                        b. Close the developer console.
+                        c. An overlay window will have opened. Click on "Copy offer to clipboard".
+                    2. Come back here, paste the whole string from your clipboard into the following text field. Afterwards, hit Ok.
+                    3. After a few seconds, a new window will appear here.
+                    `.replace(/  +/g, '')
+
+                    const offer = prompt(text)
+                    if (offer) {
+                        document.getElementById("connected-to-text-page").innerHTML = "Connecting..."
+                        simplePeer.signal(JSON.parse(offer))
                     }
                 })
             }
