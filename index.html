@@ -689,33 +689,45 @@
                 return previousStates.shift()
             }
 
+            function setWorkingMessage(message, showAnimation=true) {
+                const $working = document.getElementById("working")
+
+                if (!showAnimation || !message) {
+                    $working.innerText = message
+                } else {
+                    $working.innerHTML = ''
+
+                    for (let i = 0; i < message.length; i++) {
+                        let span = document.createElement("span")
+                        span.style=`--i:${i}`
+                        if (message[i] === ' ') {
+                            span.innerHTML = '&nbsp;'
+                        } else {
+                            span.innerText = message[i]
+                        }
+
+                        $working.appendChild(span)
+                    }
+                }
+            }
+
             function startWorking(on) {
                 console.debug("Started working on", on)
 
-                const $working = document.getElementById("working")
-
-                for (let i = 0; i < on.length; i++) {
-                    let span = document.createElement("span")
-                    span.style=`--i:${i}`
-                    if (on[i] === ' ') {
-                        span.innerHTML = '&nbsp;'
-                    } else {
-                        span.innerText = on[i]
-                    }
-
-                    $working.appendChild(span)
-                }
-
-                $working.style.display = "block"
+                setWorkingMessage(on)
             }
 
-            function stopWorking() {
-                setTimeout(() => {
-                    console.debug("Stopped working")
-                    const $working = document.getElementById("working")
-                    $working.style.display = "none"
-                    $working.innerHTML = ''
-                }, 250)
+            function stopWorking(message) {
+                console.debug("Stopped working")
+
+                if (message) {
+                    setWorkingMessage(message, false)
+                    setTimeout(stopWorking, 1500)
+                } else {
+                    setTimeout(() => {
+                        setWorkingMessage("")
+                    }, 250)
+                }
             }
 
             function commandFunction(title, fn) {
@@ -1066,16 +1078,21 @@
                 })
 
                 document.getElementById("save-wav").addEventListener("click", async () => {
-
                     if (typeof window.showSaveFilePicker !== "undefined") {
                         // Use Filesystem API as it is available
 
                         const newHandle = await window.showSaveFilePicker();
-                        const writableStream = await newHandle.createWritable();
 
-                        await writableStream.write(wavBlob);
-                        await writableStream.close();
+                        if (newHandle) {
+                            startWorking("Saving")
 
+                            const writableStream = await newHandle.createWritable();
+
+                            await writableStream.write(wavBlob);
+                            await writableStream.close();
+
+                            stopWorking("Saved.")
+                        }
                     } else {
                         const url = URL.createObjectURL(wavBlob);
 
@@ -1090,8 +1107,6 @@
 
                         document.body.removeChild(link);
                     }
-
-                    alert("Audio file has been saved.") 
                 })
 
                 document.getElementById("connect-to-text-page").addEventListener("click", async () => {
