@@ -38,6 +38,41 @@
                 width: 100%;
             }
 
+            #working-container {
+                position: relative;
+            }
+
+            #working {
+                position: absolute;
+                z-index: 10;
+                top: -350px;
+                width: 100%;
+                text-align: center;
+            }
+
+            .waviy {
+                position: relative;
+                -webkit-box-reflect: below -20px linear-gradient(transparent, rgba(0,0,0,.2));
+                font-size: 60px;
+            }
+
+            .waviy span {
+                position: relative;
+                display: inline-block;
+                color: #fff;
+                animation: waviy 1s infinite;
+                animation-delay: calc(.1s * var(--i));
+            }
+
+            @keyframes waviy {
+                0%,40%,100% {
+                    transform: translateY(0)
+                }
+                20% {
+                    transform: translateY(-20px)
+                }
+            }
+
             .toolbar {
                 margin: 10px 0;
                 display: flex;
@@ -86,6 +121,11 @@
         </div>
 
         <div id="waveform"></div>
+
+        <div id="working-container">
+            <div id="working" class="waviy">
+            </div>
+        </div>
 
         <div class="toolbar">
             <div id="playpause" class="tools">
@@ -649,6 +689,46 @@
                 return previousStates.shift()
             }
 
+            function startWorking(on) {
+                console.debug("Started working on", on)
+
+                const $working = document.getElementById("working")
+
+                for (let i = 0; i < on.length; i++) {
+                    let span = document.createElement("span")
+                    span.style=`--i:${i}`
+                    if (on[i] === ' ') {
+                        span.innerHTML = '&nbsp;'
+                    } else {
+                        span.innerText = on[i]
+                    }
+
+                    $working.appendChild(span)
+                }
+
+                $working.style.display = "block"
+            }
+
+            function stopWorking() {
+                setTimeout(() => {
+                    console.debug("Stopped working")
+                    const $working = document.getElementById("working")
+                    $working.style.display = "none"
+                    $working.innerHTML = ''
+                }, 250)
+            }
+
+            function commandFunction(title, fn) {
+                return (args) => {
+                    startWorking(title)
+
+                    setTimeout(async () => {
+                        await fn(args)
+                        stopWorking()
+                    })
+                }
+            }
+
             async function init() {
                 let wavBlob
                 let segments
@@ -685,7 +765,8 @@
                           maxZoom: 500,
                       }),
                     ],
-                    height: 512
+                    height: 512,
+                    minPxPerSec: 100,
                 })
 
                 const wsRegions = waveSurfer.registerPlugin(WaveSurfer.Regions.create())
@@ -702,8 +783,6 @@
 
                 waveSurfer.on('decode', async () => {
                     console.log("decoded")
-
-                    waveSurfer.zoom(100)
 
                     wsRegions.clearRegions()
 
@@ -802,11 +881,11 @@
                         await waveSurfer.playPause()
                     } else if (event.keyCode === 46) {  // del
                       event.preventDefault()
-                      await cutCommand()
+                      setTimeout(cutCommand.bind(this))
                     }
                 })
 
-                document.getElementById("copy").addEventListener("click", async() => {
+                const copyCommand = commandFunction("Copying", async () => {
                     const [start, end] = [currentRegion.start, currentRegion.end]
 
                     copiedData = await copy(audioBuffer, start, end)
@@ -816,7 +895,9 @@
                     document.getElementById("paste").disabled = ""
                 })
 
-                document.getElementById("paste").addEventListener("click", async() => {
+                document.getElementById("copy").addEventListener("click", copyCommand.bind(this))
+
+                const pasteCommand = commandFunction("Pasting", async () => {
                     wsRegions.clearRegions()
 
                     rememberState(audioBuffer, segments)
@@ -851,7 +932,9 @@
                     // addRegionsForSegments(wsRegions, segments)
                 })
 
-                async function cutCommand() {
+                document.getElementById("paste").addEventListener("click", pasteCommand.bind(this))
+
+                const cutCommand = commandFunction("Cutting", async () => {
                     if(!currentRegion) return
 
                     document.getElementById("cut").disabled = "disabled"
@@ -891,11 +974,11 @@
 
                     document.getElementById("paste").disabled = ""
                     document.getElementById("undo").disabled = ""
-                }
+                })
 
                 document.getElementById("cut").addEventListener("click", cutCommand.bind(this))
 
-                document.getElementById("undo").addEventListener("click", async () => {
+                const undoCommand = commandFunction("Undoing", async () => {
                     const currentTime = waveSurfer.getCurrentTime()
 
                     if (previousStates.length == 0) return
@@ -911,7 +994,9 @@
                         document.getElementById("undo").disabled = "disabled"
                 })
 
-                document.getElementById("strangle").addEventListener("click", async() => {
+                document.getElementById("undo").addEventListener("click", undoCommand.bind(this))
+
+                const strangleCommand = commandFunction("Strangling", async () => {
                     const [start, end] = [currentRegion.start, currentRegion.end]
 
                     rememberState(audioBuffer, segments)
@@ -927,9 +1012,9 @@
                     addRegionsForSegments(wsRegions, segments)
                 })
 
-                document.getElementById("insert-silence").addEventListener("click", async() => {
-                    const length = parseFloat(prompt("Silence duration in seconds:", "1.0"))
+                document.getElementById("strangle").addEventListener("click", strangleCommand.bind(this))
 
+                const insertSilenceCommand = commandFunction("Inserting silence", async (length) => {
                     wsRegions.clearRegions()
 
                     const start = waveSurfer.getCurrentTime()
@@ -949,6 +1034,12 @@
                     waveSurfer.setTime(start)
 
                     addRegionsForSegments(wsRegions, segments)
+                })
+
+                document.getElementById("insert-silence").addEventListener("click", () => {
+                    const length = parseFloat(prompt("Silence duration in seconds:", "1.0"))
+
+                    insertSilenceCommand(length)
                 })
 
                 document.getElementById("open-file").addEventListener("change", (event) => {
