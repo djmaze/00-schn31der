@@ -773,6 +773,17 @@
                 }
             }
 
+            async function saveFile(fileHandle, wavBlob) {
+                startWorking("Saving")
+
+                const writableStream = await fileHandle.createWritable();
+
+                await writableStream.write(wavBlob);
+                await writableStream.close();
+
+                stopWorking("Saved.")
+            }
+
             async function init() {
                 let wavBlob
                 let segments
@@ -1111,17 +1122,19 @@
                     if (typeof window.showSaveFilePicker !== "undefined") {
                         // Use Filesystem API as it is available
 
-                        const newHandle = await window.showSaveFilePicker();
+                        const fileHandle = await window.showSaveFilePicker({
+                            id: "save-file",
+                            excludeAcceptAllOption: true,
+                            types: [
+                                {
+                                    description: "WAV file",
+                                    accept: {"audio/wav": [".txt"]}
+                                }
+                            ]
+                        });
 
-                        if (newHandle) {
-                            startWorking("Saving")
-
-                            const writableStream = await newHandle.createWritable();
-
-                            await writableStream.write(wavBlob);
-                            await writableStream.close();
-
-                            stopWorking("Saved.")
+                        if (fileHandle) {
+                            await saveFile(fileHandle, wavBlob)
                         }
                     } else {
                         const url = URL.createObjectURL(wavBlob);
