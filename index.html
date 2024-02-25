@@ -133,7 +133,7 @@
             </div>
             <div id="copypaste" class="tools">
                 <button id="copy" class="tool for-selection" disabled>Copy</button>
-                <button id="paste" class="tool" disabled>Paste</button>
+                <button id="paste" class="tool for-copy" disabled>Paste</button>
                 <button id="cut" class="tool for-selection" disabled>Cut</button>
             </div>
             <div id="effects" class="tools">
@@ -149,6 +149,9 @@
 
         <script>
             const SAMPLE_RATE = 44_100
+
+            let currentRegion
+            let copiedData
 
             async function getAudioForURL(url) {
                 const response = await fetch(url)
@@ -711,14 +714,43 @@
                 }
             }
 
+            function disableActions() {
+                document.querySelectorAll(".toolbar .tool").forEach(($tool) => {
+                    $tool.disabled = "disabled"
+                })
+            }
+
+            function reenableActions() {
+                document.querySelectorAll(".toolbar .tool").forEach(($tool) => {
+                    if ($tool.classList.contains("for-selection")) {
+                        if (currentRegion)
+                            $tool.disabled = ""
+                        else
+                            $tool.disabled = "disabled"
+                    } else if ($tool.classList.contains("for-copy")) {
+                        if (copiedData)
+                            $tool.disabled = ""
+                        else
+                            $tool.disabled = "disabled"
+                    }
+                    else {
+                        $tool.disabled = ""
+                    }
+                })
+            }
+
             function startWorking(on) {
                 console.debug("Started working on", on)
+
+                disableActions()
 
                 setWorkingMessage(on)
             }
 
             function stopWorking(message) {
                 console.debug("Stopped working")
+
+                reenableActions()
 
                 if (message) {
                     setWorkingMessage(message, false)
@@ -744,7 +776,6 @@
             async function init() {
                 let wavBlob
                 let segments
-                let copiedData
                 let transcribed = false
                 let simplePeer
                 let simplePeerConnected = false
@@ -809,8 +840,6 @@
                     }
                 })
 
-                let currentRegion;
-
                 const removeSelection = wsRegions.enableDragSelection({
                         color: 'rgba(221, 213, 233, 0.5)',
                 })
@@ -835,7 +864,7 @@
                         console.log("Over region", region)
                     })
 
-                    document.querySelectorAll(".tool.for-selection").forEach(($el) => $el.disabled = "")
+                    reenableActions()
                 })
 
                 wsRegions.on("region-clicked", (region, e) => {
@@ -855,7 +884,8 @@
                     } else {
                         region.remove()
                         currentRegion = undefined
-                        document.querySelectorAll(".tool.for-selection").forEach(($el) => $el.disabled = "disabled")
+
+                        reenableActions()
                     }
 
                 })
