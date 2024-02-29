@@ -102,7 +102,6 @@
                 min-width: 70px;
             }
 
-
             button + .shortcut {
                 display: none;
                 color: yellow;
@@ -110,6 +109,10 @@
                 top: -20px; /* Adjust this value to move the element up */
                 left: 50%;
                 transform: translateX(-50%);
+            }
+
+            button:disabled + .shortcut {
+                display: none !important;
             }
 
             .toolbar.show-shortcuts .shortcut {
