@@ -736,17 +736,22 @@
 
             const previousStates = []
 
-            function rememberState(audioBuffer, segments) {
+            function rememberState(audioBuffer, segments, action) {
                 previousStates.unshift({
                     audioBuffer,
-                    segments: JSON.parse(JSON.stringify(segments))
+                    segments: JSON.parse(JSON.stringify(segments)),
+                    action: action
                 })
+
+                document.getElementById("undo").innerText = `Undo ${action}`
             }
 
             function getPreviousState() {
                 if (!previousStates.length) return
 
-                return previousStates.shift()
+                const previousState = previousStates.shift()
+
+                return previousState
             }
 
             function setWorkingMessage(message, showAnimation=true) {
@@ -789,8 +794,13 @@
                             $tool.disabled = ""
                         else
                             $tool.disabled = "disabled"
-                    }
-                    else {
+                    } else if ($tool.id === "undo") {
+                        if (previousStates.length) {
+                            $tool.disabled = ""
+                        } else {
+                            $tool.disabled = "disabled"
+                        }
+                    } else {
                         $tool.disabled = ""
                     }
                 })
@@ -1059,7 +1069,7 @@
                 const pasteCommand = commandFunction("Pasting", async () => {
                     wsRegions.clearRegions()
 
-                    rememberState(audioBuffer, segments)
+                    rememberState(audioBuffer, segments, "paste")
 
                     const start = waveSurfer.getCurrentTime()
                     const length = copiedData.length / audioBuffer.sampleRate
@@ -1105,7 +1115,7 @@
 
                     wsRegions.clearRegions()
 
-                    rememberState(audioBuffer, segments)
+                    rememberState(audioBuffer, segments, "cut")
 
                     const overlappingSegments = cutSegments(segments, start, end)
 
@@ -1149,8 +1159,15 @@
 
                     waveSurfer.setTime(currentTime)
 
-                    if (previousStates.length == 0)
-                        document.getElementById("undo").disabled = "disabled"
+                    const $undo = document.getElementById("undo")
+
+                    if (previousStates.length > 0) {
+                        $undo.innerText = `Undo ${previousStates[0].action}`
+                    }
+                    else {
+                        $undo.innerText = "Undo"
+                        setTimeout(() => $undo.disabled = "disabled")        // Somehow setTimeout is necessary here
+                    }
                 })
 
                 document.getElementById("undo").addEventListener("click", undoCommand.bind(this))
@@ -1158,7 +1175,7 @@
                 const strangleCommand = commandFunction("Strangling", async () => {
                     const [start, end] = [currentRegion.start, currentRegion.end]
 
-                    rememberState(audioBuffer, segments)
+                    rememberState(audioBuffer, segments, "strangle")
 
                     audioBuffer = await strangle(audioBuffer, start, end)
 
@@ -1178,7 +1195,7 @@
 
                     const start = waveSurfer.getCurrentTime()
 
-                    rememberState(audioBuffer, segments)
+                    rememberState(audioBuffer, segments, "insert silence")
 
                     console.debug("Insert silence start / length", start, length)
 
