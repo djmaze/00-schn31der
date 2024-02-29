@@ -74,7 +74,7 @@
             }
 
             .toolbar {
-                margin: 10px 0;
+                margin: 20px 0;
                 display: flex;
                 justify-content: flex-start;
             }
@@ -91,6 +91,35 @@
 
             #transcribing {
                 clear: both;
+            }
+
+            .tool-wrapper {
+                display: inline-block;
+                position: relative;
+            }
+
+            .tool {
+                min-width: 70px;
+            }
+
+
+            button + .shortcut {
+                display: none;
+                color: yellow;
+                position: absolute;
+                top: -20px; /* Adjust this value to move the element up */
+                left: 50%;
+                transform: translateX(-50%);
+            }
+
+            .toolbar.show-shortcuts .shortcut {
+                display: inline-block;
+                white-space: nowrap;
+            }
+
+
+            #hints {
+                color: yellow;
             }
         </style>
     </head>
@@ -129,22 +158,47 @@
 
         <div class="toolbar">
             <div id="playpause" class="tools">
-                <button id="pause">Play / Pause</button>
+                <div class="tool-wrapper">
+                    <button id="pause">Play / Pause</button>
+                    <span class="shortcut" for="pause">SPACE</span>
+                </div>
             </div>
             <div id="copypaste" class="tools">
-                <button id="copy" class="tool for-selection" disabled>Copy</button>
-                <button id="paste" class="tool for-copy" disabled>Paste</button>
-                <button id="cut" class="tool for-selection" disabled>Cut</button>
+                <div class="tool-wrapper">
+                    <button id="copy" class="tool for-selection" disabled>Copy</button>
+                    <span class="shortcut" for="cut">CTRL-C</span>
+                </div>
+                <div class="tool-wrapper">
+                    <button id="paste" class="tool for-copy" disabled>Paste</button>
+                    <span class="shortcut" for="cut">CTRL-P</span>
+                </div>
+                <div class="tool-wrapper">
+                    <button id="cut" class="tool for-selection" disabled>Cut</button>
+                    <span class="shortcut" for="cut">CTRL-X</span>
+                </div>
             </div>
             <div id="effects" class="tools">
-                <button id="strangle" class="tool for-selection" disabled>Strangle</button>
-                <button id="insert-silence" class="tool">Insert silence</button>
+                <div class="tool-wrapper">
+                    <button id="strangle" class="tool for-selection" disabled>Strangle</button>
+                    <span class="shortcut" for="strangle">CTRL-M</span>
+                </div>
+                <div class="tool-wrapper">
+                    <button id="insert-silence" class="tool">Insert silence</button>
+                    <span class="shortcut" for="insert-silence">CTRL-I</span>
+                </div>
             </div>
             <div class="tools">
-                <button id="undo" class="tool" disabled>Undo</button>
+                <div class="tool-wrapper">
+                    <button id="undo" class="tool" disabled>Undo</button>
+                    <span class="shortcut" for="undo">CTRL-Z</span>
+                </div>
             </div>
 
             <div id="transcribing" style="display: none">Transcribing..</div>
+        </div>
+
+        <div id="hints">
+            Show shortcuts with &lt;CTRL&gt; 
         </div>
 
         <script>
@@ -928,13 +982,62 @@
                     waveSurfer.playPause()
                 })
 
+                document.addEventListener("keydown", async (event) => {
+                    switch(event.keyCode) {
+                        case 17:    // CTRL
+                            document.querySelectorAll(".toolbar").forEach(($el) => $el.classList.add("show-shortcuts"))
+                            break
+                    }
+                })
+
                 document.addEventListener("keyup", async (event) => {
-                    if (event.keyCode === 32) {    // space
-                        event.preventDefault()
-                        await waveSurfer.playPause()
-                    } else if (event.keyCode === 46) {  // del
-                      event.preventDefault()
-                      setTimeout(cutCommand.bind(this))
+                    console.debug("keyCode", event.keyCode)
+
+                    if (event.ctrlKey) {
+                        switch(event.keyCode) {
+                            case 67:    // c
+                                event.preventDefault()
+                                setTimeout(copyCommand.bind(this))
+                                break
+                            case 73:    // i
+                                event.preventDefault()
+
+                                const length = parseFloat(prompt("Silence duration in seconds:", "1.0"))
+                                if (length)
+                                    setTimeout(insertSilenceCommand.bind(this, length))
+                                break
+                            case 77:    // m
+                                event.preventDefault()
+                                setTimeout(strangleCommand.bind(this))
+                                break
+                            case 86:    // p
+                                event.preventDefault()
+                                setTimeout(pasteCommand.bind(this))
+                                break
+                            case 88:    // x
+                                event.preventDefault()
+                                setTimeout(cutCommand.bind(this))
+                                break
+                            case 90:    // x
+                                event.preventDefault()
+                                setTimeout(undoCommand.bind(this))
+                                break
+                        }
+                    }
+                    else {
+                        switch(event.keyCode) {
+                            case 32:    // SPACE
+                                event.preventDefault()
+                                await waveSurfer.playPause()
+                                break
+                            case 46:  // DEL
+                                event.preventDefault()
+                                setTimeout(cutCommand.bind(this))
+                                break
+                            case 17:    // CTRL
+                                document.querySelectorAll(".toolbar").forEach(($el) => $el.classList.remove("show-shortcuts"))
+                                break
+                        }
                     }
                 })
 
@@ -1092,7 +1195,8 @@
                 document.getElementById("insert-silence").addEventListener("click", () => {
                     const length = parseFloat(prompt("Silence duration in seconds:", "1.0"))
 
-                    insertSilenceCommand(length)
+                    if (length)
+                        insertSilenceCommand(length)
                 })
 
                 document.getElementById("open-file").addEventListener("change", (event) => {
