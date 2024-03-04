@@ -207,6 +207,8 @@
 
         <script>
             const SAMPLE_RATE = 44_100
+            const MIN_ZOOM = 10
+            const MAX_ZOOM = 500
 
             let currentRegion
             let copiedData
@@ -882,9 +884,9 @@
                         }),
                       WaveSurfer.Zoom.create({
                           // the amount of zoom per wheel step, e.g. 0.5 means a 50% magnification per scroll
-                          scale: 0.5,
+                          scale: 0.25,
                           // Optionally, specify the maximum pixels-per-second factor while zooming
-                          maxZoom: 500,
+                          maxZoom: MAX_ZOOM,
                       }),
                     ],
                     height: 512,
@@ -895,6 +897,12 @@
 
                 const $minPxPerSec = document.querySelector('#min-px-per-sec')
                 waveSurfer.on('zoom', (minPxPerSec) => {
+                    if (minPxPerSec < MIN_ZOOM) {
+                        minPxPerSec = MIN_ZOOM
+                        console.debug("Resetting zoom to", minPxPerSec)
+                        waveSurfer.zoom(minPxPerSec)
+                    }
+
                     $minPxPerSec.textContent = `Zoom: ${Math.round(minPxPerSec)}`
                 })
 
