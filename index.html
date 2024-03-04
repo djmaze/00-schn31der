@@ -413,10 +413,7 @@
                 return json
             }
             
-            async function transcribeSegments(audioBuffer, segments, cb) {
-                const lang = document.getElementById("transcription-lang").value
-                if (!lang) return
-
+            async function transcribeSegments(lang, audioBuffer, segments, cb) {
                 document.getElementById("transcribing").style.display = "block"
 
                 return new Promise((resolve) => {
@@ -854,12 +851,23 @@
                 stopWorking("Saved.")
             }
 
+            async function transcribeAllSegments(lang, segments, wsRegions, audioBuffer) {
+                console.debug("Transcribing all segments", segments)
+
+                segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
+                await transcribeSegments(lang, audioBuffer, segments, (segment) => {
+                    updateRegionForSegment(wsRegions, segment)
+                })
+
+            }
+
             async function init() {
                 let wavBlob
                 let segments
                 let transcribed = false
                 let simplePeer
                 let simplePeerConnected = false
+                let transcriptionLang
 
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
                 let audioBuffer = audioCtx.createBuffer(1, 1, SAMPLE_RATE)
@@ -916,12 +924,10 @@
 
                     wsRegions.clearRegions()
 
-                    if (!transcribed) {
-                        console.debug("transcribeSegments", segments)
-                        segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
-                        await transcribeSegments(audioBuffer, segments, (segment) => {
-                            updateRegionForSegment(wsRegions, segment)
-                        })
+                    segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
+
+                    if (!transcribed && transcriptionLang) {
+                        await transcribeAllSegments(transcriptionLang, segments, wsRegions, audioBuffer)
 
                         transcribed = true
                     }
@@ -1097,14 +1103,17 @@
 
                     if (affectedSegment) {
                         segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
-                        await transcribeSegments(audioBuffer, [affectedSegment], (updatedSegment) => {
-                            const segment = segments.find((s) => s.i === updatedSegment.i)
-                            if (segment) {
-                                console.debug("Updating segment text for", segment, updatedSegment.text)
-                                segment.text = updatedSegment.text
-                                updateRegionForSegment(wsRegions, segment)
-                            }
-                        })
+
+                        if (transcriptionLang) {
+                            await transcribeSegments(transcriptionLang, audioBuffer, [affectedSegment], (updatedSegment) => {
+                                const segment = segments.find((s) => s.i === updatedSegment.i)
+                                if (segment) {
+                                    console.debug("Updating segment text for", segment, updatedSegment.text)
+                                    segment.text = updatedSegment.text
+                                    updateRegionForSegment(wsRegions, segment)
+                                }
+                            })
+                        }
                     }
 
                     // addRegionsForSegments(wsRegions, segments)
@@ -1139,14 +1148,17 @@
                     waveSurfer.setTime(start)
                     
                     segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
-                    await transcribeSegments(audioBuffer, overlappingSegments, (updatedSegment) => {
-                        const segment = segments.find((s) => s.i === updatedSegment.i)
-                        if (segment) {
-                            console.debug("Updating segment text for", segment, updatedSegment.text)
-                            segment.text = updatedSegment.text
-                            updateRegionForSegment(wsRegions, segment)
-                        }
-                    })
+
+                    if(transcriptionLang) {
+                        await transcribeSegments(transcriptionLang, audioBuffer,  overlappingSegments, (updatedSegment) => {
+                            const segment = segments.find((s) => s.i === updatedSegment.i)
+                            if (segment) {
+                                console.debug("Updating segment text for", segment, updatedSegment.text)
+                                segment.text = updatedSegment.text
+                                updateRegionForSegment(wsRegions, segment)
+                            }
+                        })
+                    }
 
                     addRegionsForSegments(wsRegions, segments)
 
@@ -1286,18 +1298,25 @@
                 })
 
                 document.getElementById("transcription-lang").addEventListener("change", async () => {
-                    const lang = document.getElementById("transcription-lang").value
-                    console.debug("Activating transcription service")
+                    transcriptionLang = document.getElementById("transcription-lang").value
+                    if (transcriptionLang) {
+                        if (segments.length && transcriptionLang && !transcribed) {
+                            await transcribeAllSegments(transcriptionLang, segments, wsRegions, audioBuffer)
 
-                    if (lang) {
-                        document.getElementById("transcribe-health").innerHTML = "Loading..."
+                            transcribed = true
+                        }
+                        else {
+                            console.debug("Activating transcription service")
 
-                        const url = new URL(window.CONFIGURATION.transcribeURL)
-                        url.pathname = "/.well-known/health"
-                        const response = await fetch(url, {method: 'GET'})
+                            document.getElementById("transcribe-health").innerHTML = "Loading..."
 
-                        if (response.ok) {
-                            document.getElementById("transcribe-health").innerHTML = "Loaded"
+                            const url = new URL(window.CONFIGURATION.transcribeURL)
+                            url.pathname = "/.well-known/health"
+                            const response = await fetch(url, {method: 'GET'})
+
+                            if (response.ok) {
+                                document.getElementById("transcribe-health").innerHTML = "Loaded"
+                            }
                         }
                     }
                 })
