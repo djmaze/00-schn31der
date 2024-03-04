@@ -140,6 +140,7 @@
                     <option value="en">English</option>
                     <option value="de">German</option>
                 </select>
+                <span id="transcribe-health" class="tool"></span>
             </div>
 
             <div id="zoom" class="tools">
@@ -1273,6 +1274,23 @@
                         link.dispatchEvent(new MouseEvent('click'));
 
                         document.body.removeChild(link);
+                    }
+                })
+
+                document.getElementById("transcription-lang").addEventListener("change", async () => {
+                    const lang = document.getElementById("transcription-lang").value
+                    console.debug("Activating transcription service")
+
+                    if (lang) {
+                        document.getElementById("transcribe-health").innerHTML = "Loading..."
+
+                        const url = new URL(window.CONFIGURATION.transcribeURL)
+                        url.pathname = "/.well-known/health"
+                        const response = await fetch(url, {method: 'GET'})
+
+                        if (response.ok) {
+                            document.getElementById("transcribe-health").innerHTML = "Loaded"
+                        }
                     }
                 })
 
