@@ -1245,6 +1245,8 @@
                     seedBase = stringHash(file.name)
                     console.debug("Setting seedBase", seedBase)
 
+                    startWorking("Loading file")
+
                     const reader = new FileReader()
                     reader.addEventListener("loadend", async () => {
                         const ctx = new AudioContext({
@@ -1259,6 +1261,8 @@
 
                         transcribed = false
                         wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+
+                        stopWorking("File loaded.")
                     })
                     reader.readAsArrayBuffer(file)
                 })
