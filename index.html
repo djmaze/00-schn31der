@@ -397,7 +397,7 @@
 
                 const TRANSCRIBE_URL = window.CONFIGURATION.transcribeURL
 
-                const url = TRANSCRIBE_URL + '?lang=' + lang + "&output=" + output + "&sampling-rate=44100&src_lang=de"
+                const url = TRANSCRIBE_URL + '?src_lang=' + lang + "&output=" + output + "&sampling-rate=44100"
                 const response = await fetch(url, {
                     method: 'POST',
                     body: audioData,
