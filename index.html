@@ -566,9 +566,10 @@
                 if (!containingSegment) {
                     const previousSegment = segments.find(segment => segment.start < startSeconds)
                     const previousSegmentIndex = segments.indexOf(previousSegment)
+                    const i = previousSegment ? previousSegment.i + 1 : 0
 
                     newSegment = {
-                        i: previousSegment.i + 1,
+                        i,
                         start: startSeconds,
                         end: endSeconds
                     }
