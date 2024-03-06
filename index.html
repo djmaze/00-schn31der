@@ -133,6 +133,11 @@
                 <button id="save-wav" class="tool">Save as WAV</button>
             </div>
 
+            <div id="autosave-tools" class="tools">
+                <button id="toggle-autosave" class="tool">Enable Autosave</button>
+                <span id="autosave-state" class="tool"></span>
+            </div>
+
             <div id="transcription" class="tools">
                 <span class="tool">Transcription:</span>
                 <select id="transcription-lang" class="tool">
@@ -736,10 +741,10 @@
 
             const previousStates = []
 
-            function rememberState(audioBuffer, segments, action) {
+            function rememberState(editorState, action) {
                 previousStates.unshift({
-                    audioBuffer,
-                    segments: JSON.parse(JSON.stringify(segments)),
+                    audioBuffer: editorState.audioBuffer,
+                    segments: JSON.parse(JSON.stringify(editorState.segments)),
                     action: action
                 })
 
@@ -752,6 +757,17 @@
                 const previousState = previousStates.shift()
 
                 return previousState
+            }
+
+            async function autoSave(editorState) {
+                if (editorState.autoSaveFileHandle) {
+                    const $state = document.getElementById("autosave-state")
+                    $state.innerText = "Saving..."
+
+                    await saveFile(editorState.autoSaveFileHandle, editorState.wavBlob)
+
+                    $state.innerText = editorState.autoSaveFileHandle.name
+                }
             }
 
             function setWorkingMessage(message, showAnimation=true) {
@@ -851,26 +867,30 @@
                 stopWorking("Saved.")
             }
 
-            async function transcribeAllSegments(lang, segments, wsRegions, audioBuffer) {
-                console.debug("Transcribing all segments", segments)
+            async function transcribeAllSegments(lang, editorState, wsRegions) {
+                console.debug("Transcribing all segments", editorState.segments)
 
-                segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
-                await transcribeSegments(lang, audioBuffer, segments, (segment) => {
+                editorState.segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
+                await transcribeSegments(lang, editorState.audioBuffer, editorState.segments, (segment) => {
                     updateRegionForSegment(wsRegions, segment)
                 })
 
             }
 
             async function init() {
-                let wavBlob
-                let segments
                 let transcribed = false
                 let simplePeer
                 let simplePeerConnected = false
                 let transcriptionLang
+                const editorState = {
+                    audioBuffer: undefined,
+                    wavBlob: undefined,
+                    segments: undefined,
+                    autoSaveFileHandle: undefined
+                }
 
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-                let audioBuffer = audioCtx.createBuffer(1, 1, SAMPLE_RATE)
+                editorState.audioBuffer = audioCtx.createBuffer(1, 1, SAMPLE_RATE)
 
                 const waveSurfer = new WaveSurfer({
                     container: '#waveform',
@@ -914,20 +934,20 @@
                     $minPxPerSec.textContent = `Zoom: ${Math.round(minPxPerSec)}`
                 })
 
-                segments = extractSegments(audioBuffer.getChannelData(0), audioBuffer.duration)
-                console.debug("found segments", segments)
+                editorState.segments = extractSegments(editorState.audioBuffer.getChannelData(0), editorState.audioBuffer.duration)
+                console.debug("found segments", editorState.segments)
 
-                wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+                editorState.wavBlob = await loadDecodedBuffer(waveSurfer, editorState.audioBuffer)
 
                 waveSurfer.on('decode', async () => {
                     console.log("decoded")
 
                     wsRegions.clearRegions()
 
-                    segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
+                    editorState.segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
 
                     if (!transcribed && transcriptionLang) {
-                        await transcribeAllSegments(transcriptionLang, segments, wsRegions, audioBuffer)
+                        await transcribeAllSegments(transcriptionLang, editorState, wsRegions)
 
                         transcribed = true
                     }
@@ -1072,7 +1092,7 @@
                 const copyCommand = commandFunction("Copying", async () => {
                     const [start, end] = [currentRegion.start, currentRegion.end]
 
-                    copiedData = await copy(audioBuffer, start, end)
+                    copiedData = await copy(editorState.audioBuffer, start, end)
 
                     console.debug("copied audio from / until", start, end)
                     
@@ -1084,29 +1104,31 @@
                 const pasteCommand = commandFunction("Pasting", async () => {
                     wsRegions.clearRegions()
 
-                    rememberState(audioBuffer, segments, "paste")
+                    rememberState(editorState, "paste")
 
                     const start = waveSurfer.getCurrentTime()
-                    const length = copiedData.length / audioBuffer.sampleRate
+                    const length = copiedData.length / editorState.audioBuffer.sampleRate
 
                     console.debug("Pasting audio start / length", start, length)
 
-                    const affectedSegment = pasteIntoSegments(segments, start, length)
+                    const affectedSegment = pasteIntoSegments(editorState.segments, start, length)
 
-                    audioBuffer = await paste(audioBuffer, copiedData, start)
+                    editorState.audioBuffer = await paste(editorState.audioBuffer, copiedData, start)
 
-                    console.log("Loading new audio buffer", audioBuffer)
+                    console.log("Loading new audio buffer", editorState.audioBuffer)
 
-                    wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+                    editorState.wavBlob = await loadDecodedBuffer(waveSurfer, editorState.audioBuffer)
+
+                    autoSave(editorState)
 
                     waveSurfer.setTime(start)
 
                     if (affectedSegment) {
-                        segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
+                        editorState.segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
 
                         if (transcriptionLang) {
-                            await transcribeSegments(transcriptionLang, audioBuffer, [affectedSegment], (updatedSegment) => {
-                                const segment = segments.find((s) => s.i === updatedSegment.i)
+                            await transcribeSegments(transcriptionLang, editorState.audioBuffer, [affectedSegment], (updatedSegment) => {
+                                const segment = editorState.segments.find((s) => s.i === updatedSegment.i)
                                 if (segment) {
                                     console.debug("Updating segment text for", segment, updatedSegment.text)
                                     segment.text = updatedSegment.text
@@ -1133,25 +1155,27 @@
 
                     wsRegions.clearRegions()
 
-                    rememberState(audioBuffer, segments, "cut")
+                    rememberState(editorState, "cut")
 
-                    const overlappingSegments = cutSegments(segments, start, end)
+                    const overlappingSegments = cutSegments(editorState.segments, start, end)
 
-                    const result = await cut(audioBuffer, start, end)
-                    audioBuffer = result[0]
+                    const result = await cut(editorState.audioBuffer, start, end)
+                    editorState.audioBuffer = result[0]
                     copiedData = result[1]
 
-                    console.log("Loading new audio buffer", audioBuffer)
+                    console.log("Loading new audio buffer", editorState.audioBuffer)
 
-                    wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+                    editorState.wavBlob = await loadDecodedBuffer(waveSurfer, editorState.audioBuffer)
+
+                    autoSave(editorState)
 
                     waveSurfer.setTime(start)
                     
-                    segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
+                    editorState.segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
 
                     if(transcriptionLang) {
-                        await transcribeSegments(transcriptionLang, audioBuffer,  overlappingSegments, (updatedSegment) => {
-                            const segment = segments.find((s) => s.i === updatedSegment.i)
+                        await transcribeSegments(transcriptionLang, editorState.audioBuffer,  overlappingSegments, (updatedSegment) => {
+                            const segment = editorState.segments.find((s) => s.i === updatedSegment.i)
                             if (segment) {
                                 console.debug("Updating segment text for", segment, updatedSegment.text)
                                 segment.text = updatedSegment.text
@@ -1160,7 +1184,7 @@
                         })
                     }
 
-                    addRegionsForSegments(wsRegions, segments)
+                    addRegionsForSegments(wsRegions, editorState.segments)
 
                     document.getElementById("paste").disabled = ""
                     document.getElementById("undo").disabled = ""
@@ -1173,10 +1197,12 @@
 
                     if (previousStates.length == 0) return
 
-                    ({audioBuffer, segments} = getPreviousState())
-                    wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+                    ({audioBuffer: editorState.audioBuffer, segments: editorState.segments} = getPreviousState())
+                    editorState.wavBlob = await loadDecodedBuffer(waveSurfer, editorState.audioBuffer)
 
-                    addRegionsForSegments(wsRegions, segments)
+                    autoSave(editorState)
+
+                    addRegionsForSegments(wsRegions, editorState.segments)
 
                     waveSurfer.setTime(currentTime)
 
@@ -1196,17 +1222,19 @@
                 const strangleCommand = commandFunction("Strangling", async () => {
                     const [start, end] = [currentRegion.start, currentRegion.end]
 
-                    rememberState(audioBuffer, segments, "strangle")
+                    rememberState(editorState, "strangle")
 
-                    audioBuffer = await strangle(audioBuffer, start, end)
+                    editorState.audioBuffer = await strangle(editorState.audioBuffer, start, end)
 
                     console.debug("strangled audio from / until", start, end)
 
-                    wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+                    editorState.wavBlob = await loadDecodedBuffer(waveSurfer, editorState.audioBuffer)
+
+                    autoSave(editorState)
 
                     waveSurfer.setTime(start)
 
-                    addRegionsForSegments(wsRegions, segments)
+                    addRegionsForSegments(wsRegions, editorState.segments)
                 })
 
                 document.getElementById("strangle").addEventListener("click", strangleCommand.bind(this))
@@ -1216,21 +1244,23 @@
 
                     const start = waveSurfer.getCurrentTime()
 
-                    rememberState(audioBuffer, segments, "insert silence")
+                    rememberState(editorState, "insert silence")
 
                     console.debug("Insert silence start / length", start, length)
 
-                    insertSilenceIntoSegments(segments, start, length)
+                    insertSilenceIntoSegments(editorState.segments, start, length)
 
-                    audioBuffer = await insertSilence(audioBuffer, start, length)
+                    editorState.audioBuffer = await insertSilence(editorState.audioBuffer, start, length)
 
-                    console.log("Loading new audio buffer", audioBuffer)
+                    console.log("Loading new audio buffer", editorState.audioBuffer)
 
-                    wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+                    editorState.wavBlob = await loadDecodedBuffer(waveSurfer, editorState.audioBuffer)
+
+                    autoSave(editorState)
 
                     waveSurfer.setTime(start)
 
-                    addRegionsForSegments(wsRegions, segments)
+                    addRegionsForSegments(wsRegions, editorState.segments)
                 })
 
                 document.getElementById("insert-silence").addEventListener("click", () => {
@@ -1254,13 +1284,13 @@
                             numChannels: 1
                         })
 
-                        audioBuffer = await ctx.decodeAudioData(reader.result)
+                        editorState.audioBuffer = await ctx.decodeAudioData(reader.result)
 
-                        segments = extractSegments(audioBuffer.getChannelData(0), audioBuffer.duration)
-                        console.debug("found segments", segments)
+                        editorState.segments = extractSegments(editorState.audioBuffer.getChannelData(0), editorState.audioBuffer.duration)
+                        console.debug("found segments", editorState.segments)
 
                         transcribed = false
-                        wavBlob = await loadDecodedBuffer(waveSurfer, audioBuffer)
+                        editorState.wavBlob = await loadDecodedBuffer(waveSurfer, editorState.audioBuffer)
 
                         stopWorking("File loaded.")
                     })
@@ -1283,10 +1313,10 @@
                         });
 
                         if (fileHandle) {
-                            await saveFile(fileHandle, wavBlob)
+                            await saveFile(fileHandle, editorState.wavBlob)
                         }
                     } else {
-                        const url = URL.createObjectURL(wavBlob);
+                        const url = URL.createObjectURL(editorState.wavBlob);
 
                         const link = document.createElement('a');
                         link.href = url;
@@ -1301,11 +1331,34 @@
                     }
                 })
 
+                document.getElementById("toggle-autosave").addEventListener("click", async () => {
+                    if (editorState.autoSaveFileHandle) {
+                        editorState.autoSaveFileHandle = undefined
+                        document.getElementById("autosave-state").innerText = ""
+                        document.getElementById("toggle-autosave").innerText = "Enable Autosave"
+                    } else {
+                        editorState.autoSaveFileHandle = await window.showSaveFilePicker({
+                            id: "autosave-file",
+                            suggestedName: "autosave.wav",
+                            excludeAcceptAllOption: true,
+                            types: [
+                                {
+                                    description: "WAV file",
+                                    accept: {"audio/wav": [".txt"]}
+                                }
+                            ]
+                        });
+
+                        document.getElementById("autosave-state").innerText = editorState.autoSaveFileHandle.name
+                        document.getElementById("toggle-autosave").innerText = "Disable Autosave"
+                    }
+                })
+
                 document.getElementById("transcription-lang").addEventListener("change", async () => {
                     transcriptionLang = document.getElementById("transcription-lang").value
                     if (transcriptionLang) {
-                        if (segments.length && transcriptionLang && !transcribed) {
-                            await transcribeAllSegments(transcriptionLang, segments, wsRegions, audioBuffer)
+                        if (editorState.segments.length && transcriptionLang && !transcribed) {
+                            await transcribeAllSegments(transcriptionLang, editorState, wsRegions)
 
                             transcribed = true
                         }
