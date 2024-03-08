@@ -89,10 +89,6 @@
                 padding-left: 0;
             }
 
-            #transcribing {
-                clear: both;
-            }
-
             .tool-wrapper {
                 display: inline-block;
                 position: relative;
@@ -100,6 +96,10 @@
 
             .tool {
                 min-width: 70px;
+            }
+
+            .tool.working {
+                color: yellow;
             }
 
             button + .shortcut {
@@ -202,8 +202,6 @@
                     <span class="shortcut" for="undo">CTRL-Z</span>
                 </div>
             </div>
-
-            <div id="transcribing" style="display: none">Transcribing..</div>
         </div>
 
         <div id="hints">
@@ -419,7 +417,9 @@
             }
             
             async function transcribeSegments(lang, audioBuffer, segments, cb) {
-                document.getElementById("transcribing").style.display = "block"
+                const $health = document.getElementById("transcribe-health")
+                $health.innerText = "Transcribing..."
+                $health.classList.add("working")
 
                 return new Promise((resolve) => {
                     const completeData = audioBuffer.getChannelData(0)
@@ -428,7 +428,8 @@
                     const transcribeSegment = (i) => {
                         if (i === segments.length) {
                             console.log("Transcription complete.")
-                            document.getElementById("transcribing").style.display = "none"
+                            $health.innerText = "Loaded"
+                            $health.classList.remove("working")
                             return resolve()
                         }
 
