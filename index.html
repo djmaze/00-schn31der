@@ -765,7 +765,7 @@
                     const $state = document.getElementById("autosave-state")
                     $state.innerText = "Saving..."
 
-                    await saveFile(editorState.autoSaveFileHandle, editorState.wavBlob)
+                    await saveFile(editorState.autoSaveFileHandle, editorState.wavBlob, false)
 
                     $state.innerText = editorState.autoSaveFileHandle.name
                 }
@@ -857,15 +857,17 @@
                 }
             }
 
-            async function saveFile(fileHandle, wavBlob) {
-                startWorking("Saving")
+            async function saveFile(fileHandle, wavBlob, showWorking=true) {
+                if (showWorking)
+                    startWorking("Saving")
 
                 const writableStream = await fileHandle.createWritable();
 
                 await writableStream.write(wavBlob);
                 await writableStream.close();
 
-                stopWorking("Saved.")
+                if (showWorking)
+                    stopWorking("Saved.")
             }
 
             async function transcribeAllSegments(lang, editorState, wsRegions) {
