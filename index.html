@@ -22,6 +22,7 @@
 
             #waveform {
                 font-size: 10px;
+                cursor: pointer;
             }
 
             #waveform ::part(region-content) {
@@ -38,7 +39,27 @@
                 width: 100%;
             }
 
-            #working-container {
+            #time,
+            #duration {
+                position: absolute;
+                z-index: 11;
+                top: -326px;
+                margin-top: -1px;
+                background: rgba(0, 0, 0, 0.75);
+                padding: 2px;
+                color: #ddd;
+                font-size: 20px;
+            }
+
+            #time {
+                left: 0;
+            }
+
+            #duration {
+                right: 0;
+            }
+
+            #overlay-container {
                 position: relative;
             }
 
@@ -160,7 +181,9 @@
 
         <div id="waveform"></div>
 
-        <div id="working-container">
+        <div id="overlay-container">
+            <div id="time"></div>
+            <div id="duration"></div>
             <div id="working" class="waviy">
             </div>
         </div>
@@ -962,7 +985,18 @@
                     }
                 })
 
-                const removeSelection = wsRegions.enableDragSelection({
+                const formatTime = (seconds) => {
+                    const minutes = Math.floor(seconds / 60)
+                    const secondsRemainder = Math.round(seconds) % 60
+                    const paddedSeconds = `0${secondsRemainder}`.slice(-2)
+                    return `${minutes}:${paddedSeconds}`
+                }
+                const $time = document.getElementById('time')
+                const $duration = document.getElementById('duration')
+                waveSurfer.on('timeupdate', (currentTime) => ($time.textContent = formatTime(currentTime)))
+                waveSurfer.on('decode', (duration) => ($duration.textContent = formatTime(duration)))
+
+                wsRegions.enableDragSelection({
                         color: 'rgba(221, 213, 233, 0.5)',
                 })
 
