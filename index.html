@@ -9,6 +9,7 @@
         <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/timeline.min.js"></script>
         <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/minimap.min.js"></script>
         <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/hover.min.js"></script>
+        <script src="cursor_time_plugin.js"></script>
         <script src="simplepeer.min.js"></script>
         <script src="config.js"></script>
         <script src="get_wav_bytes.js"></script>
@@ -240,6 +241,7 @@
             const SAMPLE_RATE = 44_100
             const MIN_ZOOM = 10
             const MAX_ZOOM = 500
+            const TIME_LABEL_SIZE = '16px'
 
             let currentRegion
             let copiedData
@@ -937,6 +939,15 @@
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
                 editorState.audioBuffer = audioCtx.createBuffer(1, 1, SAMPLE_RATE)
 
+                const formatTime = (seconds) => {
+                    const minutes = Math.floor(seconds / 60)
+                    const secondsRemainder = (seconds % 60).toFixed(2)
+                    const paddedSeconds = secondsRemainder > 10 ? secondsRemainder : `0${secondsRemainder}`
+                    return `${minutes}:${paddedSeconds}`
+                }
+
+                WaveSurfer.Hover.prototype.formatTime = formatTime
+
                 const waveSurfer = new WaveSurfer({
                     container: '#waveform',
                     waveColor: '#4F4A85',
@@ -948,6 +959,9 @@
                             primaryLabelInterval: 1,
                             // timeInterval: 0.1,
                             // formatTimeCallback: (seconds) => seconds        // TODO Remove (only debugging)
+                            style: {
+                                fontSize: TIME_LABEL_SIZE
+                            }
                         }),
                         WaveSurfer.Minimap.create({
                             height: 20,
@@ -964,8 +978,12 @@
                       WaveSurfer.Hover.create({
                         lineColor: 'yellow',
                         labelColor: 'yellow',
-                        labelSize: '20px'
+                        labelSize: TIME_LABEL_SIZE
                       }),
+                      CursorTimePlugin.create({ 
+                        formatTime,
+                        labelSize: TIME_LABEL_SIZE
+                    }),
                     ],
                     height: 512,
                     minPxPerSec: 100,
@@ -996,18 +1014,6 @@
 
                     editorState.segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
                 })
-
-                const formatTime = (seconds) => {
-                    const minutes = Math.floor(seconds / 60)
-                    const secondsRemainder = (seconds % 60).toFixed(2)
-                    const paddedSeconds = secondsRemainder > 10 ? secondsRemainder : `0${secondsRemainder}`
-                    return `${minutes}:${paddedSeconds}`
-                }
-                const $time = document.getElementById('time')
-                const $duration = document.getElementById('duration')
-                waveSurfer.on('timeupdate', (currentTime) => ($time.textContent = formatTime(currentTime)))
-                waveSurfer.on('decode', (duration) => ($duration.textContent = formatTime(duration)))
-                WaveSurfer.Hover.prototype.formatTime = formatTime
 
                 waveSurfer.on('scroll', async (visibleStartTime, visibleEndTime) => {
                     if (!transcriptionLang) return
