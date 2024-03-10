@@ -1189,7 +1189,7 @@
 
                     console.debug("Pasting audio start / length", start, length)
 
-                    const affectedSegment = pasteIntoSegments(editorState.segments, start, length)
+                    pasteIntoSegments(editorState.segments, start, length)
 
                     editorState.audioBuffer = await paste(editorState.audioBuffer, copiedData, start)
 
@@ -1200,21 +1200,6 @@
                     autoSave(editorState)
 
                     waveSurfer.setTime(start)
-
-                    if (affectedSegment) {
-                        if (transcriptionLang) {
-                            await transcribeSegments(transcriptionLang, editorState.audioBuffer, [affectedSegment], (updatedSegment) => {
-                                const segment = editorState.segments.find((s) => s.i === updatedSegment.i)
-                                if (segment) {
-                                    console.debug("Updating segment text for", segment, updatedSegment.text)
-                                    segment.text = updatedSegment.text
-                                    updateRegionForSegment(wsRegions, segment)
-                                }
-                            })
-                        }
-                    }
-
-                    // addRegionsForSegments(wsRegions, segments)
                 })
 
                 document.getElementById("paste").addEventListener("click", pasteCommand.bind(this))
