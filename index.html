@@ -124,6 +124,10 @@
                 color: yellow;
             }
 
+            .tool.error {
+                color: red;
+            }
+
             button + .shortcut {
                 display: none;
                 color: yellow;
@@ -443,6 +447,7 @@
             async function transcribeSegments(lang, audioBuffer, segments, cb) {
                 const $health = document.getElementById("transcribe-health")
                 $health.innerText = "Transcribing..."
+                $health.classList.remove("error")
                 $health.classList.add("working")
 
                 return new Promise((resolve) => {
@@ -473,10 +478,12 @@
                                 ...segment,
                                 text: json.text
                             })
-
-                            segment.transcribing = false
-                        })
-
+                        }).catch((e) => {
+                            console.error("Error during transcribe", e)
+                            $health.innerText = "Error"
+                            $health.classList.remove("working")
+                            $health.classList.add("error")
+                        }).finally(() => segment.transcribing = false)
                     }
 
                     transcribeSegment(0)
