@@ -526,9 +526,14 @@
                             segments.splice(index, 1)
                         } else {
                             console.debug("Case 2 - selection start before segment and selection end inside segment")
+
                             const selectionBeforeSegment = segment.start - selectionStart
                             console.debug("=> Decrease start of segment according to selection part before the segment", selectionBeforeSegment)
                             segment.start -= selectionBeforeSegment
+
+                            const selectionInSegment = selectionEnd - segment.start
+                            console.debug("=> Decrease end of segment according to selection part inside segment", selectionInSegment)
+                            segment.end -= selectionInSegment
                         }
                     } else if (selectionEnd < segment.end) {
                         console.debug("Case 3 - selection start and end inside segment")
