@@ -1009,7 +1009,7 @@
 
                 wsRegions.on('region-in', (region) => {
                   console.debug("Entered region", region.content)
-                  if (simplePeerConnected) {
+                  if (simplePeerConnected && region.content?.innerText) {
                     simplePeer.send(region.content.innerText)
                   }
                 })
@@ -1410,13 +1410,21 @@
                     })
 
                     simplePeer.on('connect', () => {
-                        console.log('CONNECTED')
+                        console.log('Peer connected')
                         simplePeerConnected = true
                         document.getElementById("connected-to-text-page").innerHTML = "Connected"
                     })
 
                     simplePeer.on('data', data => {
-                        console.log('data: ' + data)
+                        console.log('Data from peer: ' + data)
+                    })
+
+                    simplePeer.on('close', () => {
+                        console.log('Peer closed the connection')
+                        simplePeer.destroy()
+                        simplePeerConnected = false
+                        document.getElementById("connected-to-text-page").innerHTML = "Disconnected"
+                        document.getElementById("connect-to-text-page").disabled = false
                     })
 
                     const code = `const script = document.createElement("script"); script.src = "${window.CONFIGURATION.textHighlighterURL}"; document.querySelector("body").appendChild(script)`
