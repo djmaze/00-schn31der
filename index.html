@@ -992,14 +992,15 @@
 
                 const formatTime = (seconds) => {
                     const minutes = Math.floor(seconds / 60)
-                    const secondsRemainder = Math.round(seconds) % 60
-                    const paddedSeconds = `0${secondsRemainder}`.slice(-2)
+                    const secondsRemainder = (seconds % 60).toFixed(2)
+                    const paddedSeconds = secondsRemainder > 10 ? secondsRemainder : `0${secondsRemainder}`
                     return `${minutes}:${paddedSeconds}`
                 }
                 const $time = document.getElementById('time')
                 const $duration = document.getElementById('duration')
                 waveSurfer.on('timeupdate', (currentTime) => ($time.textContent = formatTime(currentTime)))
                 waveSurfer.on('decode', (duration) => ($duration.textContent = formatTime(duration)))
+                WaveSurfer.Hover.prototype.formatTime = formatTime
 
                 waveSurfer.on('scroll', async (visibleStartTime, visibleEndTime) => {
                     if (!transcriptionLang) return
