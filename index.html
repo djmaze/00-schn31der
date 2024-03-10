@@ -457,7 +457,11 @@
                         }
 
                         const segment = segments[i]
+
+                        if (segment.transcribing) return
+                        segment.transcribing = true
                         console.debug("Transcribing", segment)
+
                         const data = completeData.slice(segment.start * scale, segment.end * scale)
 
                         requestTranscribe(data, lang, "text").then((json) => {
@@ -468,6 +472,8 @@
                                 ...segment,
                                 text: json.text
                             })
+
+                            segment.transcribing = false
                         })
 
                     }
@@ -910,7 +916,6 @@
             }
 
             async function init() {
-                let transcribed = false
                 let simplePeer
                 let simplePeerConnected = false
                 let transcriptionLang
@@ -976,13 +981,7 @@
 
                     wsRegions.clearRegions()
 
-                    if (!transcribed && transcriptionLang) {
-                        await transcribeAllSegments(transcriptionLang, editorState, wsRegions)
-
-                        transcribed = true
-                    } else {
-                        editorState.segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
-                    }
+                    editorState.segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
                 })
 
                 const formatTime = (seconds) => {
@@ -995,6 +994,28 @@
                 const $duration = document.getElementById('duration')
                 waveSurfer.on('timeupdate', (currentTime) => ($time.textContent = formatTime(currentTime)))
                 waveSurfer.on('decode', (duration) => ($duration.textContent = formatTime(duration)))
+
+                waveSurfer.on('scroll', async (visibleStartTime, visibleEndTime) => {
+                    if (!transcriptionLang) return
+
+                    const duration = visibleEndTime - visibleStartTime
+                    const startTime = visibleStartTime - duration
+                    const endTime = visibleEndTime + duration
+
+                    const segmentsToTranscribe = editorState.segments.filter((segment) => {
+                        return !segment.text && !segment.transcribing && (
+                            (segment.start >= startTime && segment.start <= endTime) ||
+                            (segment.end >= startTime && segment.end <= endTime)
+                        )
+                    })
+
+                    if (segmentsToTranscribe.length) {
+                        console.debug("Transcribe b/c of scroll", segmentsToTranscribe)
+                        await transcribeSegments(transcriptionLang, editorState.audioBuffer, segmentsToTranscribe, (segment) => {
+                            updateRegionForSegment(wsRegions, segment)
+                        })
+                    }
+                })
 
                 wsRegions.enableDragSelection({
                         color: 'rgba(221, 213, 233, 0.5)',
@@ -1328,7 +1349,6 @@
                         editorState.segments = extractSegments(editorState.audioBuffer.getChannelData(0), editorState.audioBuffer.duration)
                         console.debug("found segments", editorState.segments)
 
-                        transcribed = false
                         editorState.wavBlob = await loadDecodedBuffer(waveSurfer, editorState.audioBuffer)
 
                         stopWorking("File loaded.")
@@ -1395,24 +1415,17 @@
 
                 document.getElementById("transcription-lang").addEventListener("change", async () => {
                     transcriptionLang = document.getElementById("transcription-lang").value
-                    if (transcriptionLang) {
-                        if (editorState.segments.length && transcriptionLang && !transcribed) {
-                            await transcribeAllSegments(transcriptionLang, editorState, wsRegions)
+                    if (transcriptionLang && editorState.segments.length) {
+                        console.debug("Activating transcription service")
 
-                            transcribed = true
-                        }
-                        else {
-                            console.debug("Activating transcription service")
+                        document.getElementById("transcribe-health").innerHTML = "Loading..."
 
-                            document.getElementById("transcribe-health").innerHTML = "Loading..."
+                        const url = new URL(window.CONFIGURATION.transcribeURL)
+                        url.pathname = "/.well-known/health"
+                        const response = await fetch(url, {method: 'GET'})
 
-                            const url = new URL(window.CONFIGURATION.transcribeURL)
-                            url.pathname = "/.well-known/health"
-                            const response = await fetch(url, {method: 'GET'})
-
-                            if (response.ok) {
-                                document.getElementById("transcribe-health").innerHTML = "Loaded"
-                            }
+                        if (response.ok) {
+                            document.getElementById("transcribe-health").innerHTML = "Loaded"
                         }
                     }
                 })
