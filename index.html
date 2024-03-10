@@ -948,12 +948,12 @@
 
                     wsRegions.clearRegions()
 
-                    editorState.segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
-
                     if (!transcribed && transcriptionLang) {
                         await transcribeAllSegments(transcriptionLang, editorState, wsRegions)
 
                         transcribed = true
+                    } else {
+                        editorState.segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
                     }
                 })
 
@@ -1128,8 +1128,6 @@
                     waveSurfer.setTime(start)
 
                     if (affectedSegment) {
-                        editorState.segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
-
                         if (transcriptionLang) {
                             await transcribeSegments(transcriptionLang, editorState.audioBuffer, [affectedSegment], (updatedSegment) => {
                                 const segment = editorState.segments.find((s) => s.i === updatedSegment.i)
@@ -1175,8 +1173,6 @@
 
                     waveSurfer.setTime(start)
                     
-                    editorState.segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
-
                     if(transcriptionLang) {
                         await transcribeSegments(transcriptionLang, editorState.audioBuffer,  overlappingSegments, (updatedSegment) => {
                             const segment = editorState.segments.find((s) => s.i === updatedSegment.i)
