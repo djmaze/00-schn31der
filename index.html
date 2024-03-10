@@ -8,6 +8,7 @@
         <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/zoom.min.js"></script>
         <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/timeline.min.js"></script>
         <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/minimap.min.js"></script>
+        <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/hover.min.js"></script>
         <script src="simplepeer.min.js"></script>
         <script src="config.js"></script>
         <script src="get_wav_bytes.js"></script>
@@ -952,6 +953,11 @@
                           scale: 0.25,
                           // Optionally, specify the maximum pixels-per-second factor while zooming
                           maxZoom: MAX_ZOOM,
+                      }),
+                      WaveSurfer.Hover.create({
+                        lineColor: 'yellow',
+                        labelColor: 'yellow',
+                        labelSize: '20px'
                       }),
                     ],
                     height: 512,
