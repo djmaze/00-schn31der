@@ -214,6 +214,10 @@
                     <button id="cut" class="tool for-selection" disabled>Cut</button>
                     <span class="shortcut" for="cut">CTRL-X</span>
                 </div>
+                <div class="tool-wrapper">
+                    <button id="cut-part" class="tool for-region" disabled>Cut current part</button>
+                    <span class="shortcut" for="cut">CTRL-Y</span>
+                </div>
             </div>
             <div id="effects" class="tools">
                 <div class="tool-wrapper">
@@ -244,6 +248,7 @@
             const TIME_LABEL_SIZE = '16px'
 
             let currentRegion
+            let selectedRegion
             let copiedData
 
             async function getAudioForURL(url) {
@@ -851,6 +856,11 @@
                             $tool.disabled = ""
                         else
                             $tool.disabled = "disabled"
+                    } else if ($tool.classList.contains("for-region")) {
+                        if (selectedRegion)
+                            $tool.disabled = ""
+                        else
+                            $tool.disabled = "disabled"
                     } else if ($tool.classList.contains("for-copy")) {
                         if (copiedData)
                             $tool.disabled = ""
@@ -1110,6 +1120,16 @@
                         waveSurfer.pause()
                 })
 
+                waveSurfer.on('interaction', (newTime) => {
+                    selectedRegion = findRegionForTime(newTime)
+                    console.debug('selectedRegion', selectedRegion)
+                    reenableActions()
+                });
+
+                function findRegionForTime(newTime) {
+                    return wsRegions.getRegions().find((region) => region.start <= newTime && region.end >= newTime)
+                }
+
                 document.getElementById("pause").addEventListener("click", () => {
                     waveSurfer.playPause()
                 })
@@ -1153,6 +1173,10 @@
                             case 90:    // x
                                 event.preventDefault()
                                 setTimeout(undoCommand.bind(this))
+                                break
+                            case 89:    // y
+                                event.preventDefault()
+                                setTimeout(cutPartCommand.bind(this))
                                 break
                         }
                     }
@@ -1256,6 +1280,58 @@
                 })
 
                 document.getElementById("cut").addEventListener("click", cutCommand.bind(this))
+
+                const cutPartCommand = commandFunction("Cutting out selected part", async () => {
+                    if (!selectedRegion) return
+
+
+                    const [start, end] = [selectedRegion.start, selectedRegion.end]
+
+                    console.debug(wsRegions.getRegions())
+                    const nextSegment = wsRegions.getRegions().find((region) => region.start > (end + 0.05))
+                    console.debug("next segment after", end, nextSegment)
+
+                    const cutEnd = nextSegment ? nextSegment.start - 0.05 : end
+                    console.debug("cut end", cutEnd)
+
+                    selectedRegion.remove()
+                    selectedRegion = undefined
+                    wsRegions.clearRegions()
+
+                    rememberState(editorState, "cut")
+
+                    const overlappingSegments = cutSegments(editorState.segments, start, cutEnd)
+
+                    const result = await cut(editorState.audioBuffer, start, cutEnd)
+                    editorState.audioBuffer = result[0]
+                    copiedData = result[1]
+
+                    console.log("Loading new audio buffer", editorState.audioBuffer)
+
+                    editorState.wavBlob = await loadDecodedBuffer(waveSurfer, editorState.audioBuffer)
+
+                    autoSave(editorState)
+
+                    waveSurfer.setTime(start)
+                    
+                    if(transcriptionLang) {
+                        await transcribeSegments(transcriptionLang, editorState.audioBuffer,  overlappingSegments, (updatedSegment) => {
+                            const segment = editorState.segments.find((s) => s.i === updatedSegment.i)
+                            if (segment) {
+                                console.debug("Updating segment text for", segment, updatedSegment.text)
+                                segment.text = updatedSegment.text
+                                updateRegionForSegment(wsRegions, segment)
+                            }
+                        })
+                    }
+
+                    addRegionsForSegments(wsRegions, editorState.segments)
+
+                    document.getElementById("paste").disabled = ""
+                    document.getElementById("undo").disabled = ""
+                })
+
+                document.getElementById("cut-part").addEventListener("click", cutPartCommand.bind(this))
 
                 const undoCommand = commandFunction("Undoing", async () => {
                     const currentTime = waveSurfer.getCurrentTime()
