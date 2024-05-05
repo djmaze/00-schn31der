@@ -261,6 +261,7 @@
             const TIME_LABEL_SIZE = '16px'
             const SELECTION_COLOR_TRANSPARENT = 'rgba(221, 213, 233, 0.5)'
 
+            let openedFilename
             let currentRegion
             let selectedPosition
             let selectedRegion
@@ -1504,6 +1505,9 @@
 
                 document.getElementById("open-file").addEventListener("change", (event) => {
                     const file = event.target.files[0]
+                    if (!file) return
+
+                    openedFilename = file.name
                     seedBase = stringHash(file.name)
                     console.debug("Setting seedBase", seedBase)
 
@@ -1534,11 +1538,12 @@
 
                         const fileHandle = await window.showSaveFilePicker({
                             id: "save-file",
+                            suggestedName: openedFilename ? openedFilename.replace(/\..+$/, ".wav") : "audio.wav",
                             excludeAcceptAllOption: true,
                             types: [
                                 {
                                     description: "WAV file",
-                                    accept: {"audio/wav": [".txt"]}
+                                    accept: {"audio/wav": [".wav"]}
                                 }
                             ]
                         });
