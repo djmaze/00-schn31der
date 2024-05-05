@@ -156,18 +156,18 @@
     <body>
         <div class="toolbar">
             <div id="open-save" class="tools">
-                <input id="open-file" class="tool" type="file" accept=".wav,.mp3,.webm,.ogg,.flac">
-                <button id="save-wav" class="tool">Save as WAV</button>
+                <input id="open-file" class="tool" type="file" accept=".wav,.mp3,.webm,.ogg,.flac" title="Open a file for editing">
+                <button id="save-wav" class="tool" title="Save the current audio as a WAV file">Save as WAV</button>
             </div>
 
             <div id="autosave-tools" class="tools">
-                <button id="toggle-autosave" class="tool">Enable Autosave</button>
+                <button id="toggle-autosave" class="tool" title="Enable automatic saving into a separate file after every change (as a recovery mechanism)">Enable Autosave</button>
                 <span id="autosave-state" class="tool"></span>
             </div>
 
             <div id="transcription" class="tools">
                 <span class="tool">Transcription:</span>
-                <select id="transcription-lang" class="tool">
+                <select id="transcription-lang" class="tool" title="Enable audio transcription for the chosen language">
                     <option value="">–</option>
                     <option value="en">English</option>
                     <option value="de">German</option>
@@ -180,7 +180,7 @@
             </div>
 
             <div id="extras" class="tools">
-                <button id="connect-to-text-page" class="tool">Connect to text page</button>
+                <button id="connect-to-text-page" class="tool" title="Connect editor to another webpage in order to synchronously highlight the text as it is played back">Connect to text page</button>
                 <span id="connected-to-text-page" class="tool"></span>
             </div>
         </div>
@@ -197,41 +197,41 @@
         <div class="toolbar">
             <div id="playpause" class="tools">
                 <div class="tool-wrapper">
-                    <button id="pause">Play / Pause</button>
+                    <button id="pause" title="Start or stop playback of the current audio">Play / Pause</button>
                     <span class="shortcut" for="pause">SPACE</span>
                 </div>
             </div>
             <div id="copypaste" class="tools">
                 <div class="tool-wrapper">
-                    <button id="copy" class="tool for-selection" disabled>Copy</button>
+                    <button id="copy" class="tool for-selection" disabled title="Copy the selected range (for pasting it afterwards)">Copy</button>
                     <span class="shortcut" for="cut">CTRL-C</span>
                 </div>
                 <div class="tool-wrapper">
-                    <button id="paste" class="tool for-copy" disabled>Paste</button>
+                    <button id="paste" class="tool for-copy" disabled title="Insert audio which was copied or cut, at the current playback position">Paste</button>
                     <span class="shortcut" for="cut">CTRL-P</span>
                 </div>
                 <div class="tool-wrapper">
-                    <button id="cut" class="tool for-selection" disabled>Cut</button>
+                    <button id="cut" class="tool for-selection" disabled title="Cut out the selected range">Cut</button>
                     <span class="shortcut" for="cut">CTRL-X</span>
                 </div>
                 <div class="tool-wrapper">
-                    <button id="cut-part" class="tool for-region" disabled>Cut current part</button>
+                    <button id="cut-part" class="tool for-region" disabled title="Cut out the part in which the playback cursor is positioned">Cut current part</button>
                     <span class="shortcut" for="cut">CTRL-Y</span>
                 </div>
             </div>
             <div id="effects" class="tools">
                 <div class="tool-wrapper">
-                    <button id="strangle" class="tool for-selection" disabled>Strangle</button>
+                    <button id="strangle" class="tool for-selection" disabled title="Within the selected range: Fade out, silence the middle part and fade in again">Strangle</button>
                     <span class="shortcut" for="strangle">CTRL-M</span>
                 </div>
                 <div class="tool-wrapper">
-                    <button id="insert-silence" class="tool">Insert silence</button>
+                    <button id="insert-silence" class="tool" title="Insert an adjustable amount of silence at the current playback position">Insert silence</button>
                     <span class="shortcut" for="insert-silence">CTRL-I</span>
                 </div>
             </div>
             <div class="tools">
                 <div class="tool-wrapper">
-                    <button id="undo" class="tool" disabled>Undo</button>
+                    <button id="undo" class="tool" disabled title="Undo the latest change">Undo</button>
                     <span class="shortcut" for="undo">CTRL-Z</span>
                 </div>
             </div>
