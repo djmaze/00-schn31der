@@ -245,6 +245,7 @@
             <div class="tools">
                 <div class="tool-wrapper">
                     <button id="start-end-selection" class="tool" disabled title="Start or end the current selection">Start selection</button>
+                    <button id="trim-to-selection" class="tool for-selection" disabled title="Trim audio to the selected range">Trim to selection</button>
                 </div> 
             </div>
         </div>
@@ -343,6 +344,20 @@
                 copiedData.set(dataToCopy)
 
                 return [newAudioBuffer, copiedData]
+            }
+
+            async function trim(audioBuffer, startSeconds, endSeconds) {
+                const data = audioBuffer.getChannelData(0)
+                const start = Math.floor(startSeconds * audioBuffer.sampleRate)
+                const end = Math.floor(endSeconds * audioBuffer.sampleRate)
+                const dataToCopy = data.subarray(start, end)
+
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+                const newAudioBuffer = audioCtx.createBuffer(1, dataToCopy.length, audioBuffer.sampleRate)
+                const newData = newAudioBuffer.getChannelData(0)
+                newData.set(dataToCopy)
+
+                return newAudioBuffer
             }
 
             function fadeAudio(audioData, envelope) {
@@ -1348,7 +1363,66 @@
                     document.getElementById("undo").disabled = ""
                 })
 
+                document.getElementById("start-end-selection").addEventListener("click", () => {
+                    if (!markedPosition) {
+                        markedPosition = selectedPosition
+
+                        wsRegions.addRegion({
+                            id: "selection-start",
+                            start: markedPosition,
+                            content: "Start of selection",
+                            color: "#fff",
+                        })
+
+                        document.getElementById("selection").innerText = `Selection: ${formatTime(markedPosition)} -`
+                        document.getElementById("start-end-selection").innerText = "End selection"
+                    } else {
+                        const [startTime, endTime] = [markedPosition, selectedPosition].sort((a,b) => a - b)
+                        const duration = endTime - startTime
+
+                        wsRegions.addRegion({
+                            id: "selection",
+                            start: startTime,
+                            end: endTime,
+                            color: SELECTION_COLOR_TRANSPARENT,
+                            drag: true,
+                            resize: true,
+                        })
+
+                        markedPosition = undefined
+                        document.getElementById("start-end-selection").innerText = "Start selection"
+                    }
+                })
+
                 document.getElementById("cut-part").addEventListener("click", cutPartCommand.bind(this))
+
+                const trimToSelectionCommand = commandFunction("Trimming audio to the selected range", async () => {
+                    if (!currentRegion) return
+
+                    const [start, end] = [currentRegion.start, currentRegion.end]
+
+                    currentRegion = undefined
+                    selectedRegion = undefined
+                    wsRegions.clearRegions()
+                    document.getElementById("selection").innerHTML = ""
+
+                    rememberState(editorState, "trim-to-selection")
+
+                    editorState.audioBuffer = await trim(editorState.audioBuffer, start, end)
+
+                    console.log("Loading new audio buffer", editorState.audioBuffer)
+
+                    editorState.segments = extractSegments(editorState.audioBuffer.getChannelData(0), editorState.audioBuffer.duration)
+                    console.debug("found segments", editorState.segments)
+
+                    editorState.wavBlob = await loadDecodedBuffer(waveSurfer, editorState.audioBuffer)
+
+                    autoSave(editorState)
+
+                    waveSurfer.setTime(0)
+                })
+
+                document.getElementById("trim-to-selection").addEventListener("click", trimToSelectionCommand.bind(this))
 
                 const undoCommand = commandFunction("Undoing", async () => {
                     const currentTime = waveSurfer.getCurrentTime()
