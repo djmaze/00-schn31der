@@ -73,6 +73,14 @@
                 text-align: center;
             }
 
+            #selection {
+                position: absolute;
+                z-index: 10;
+                top: -300px;
+                left: 50%;
+                color: #fff;
+           }
+
             .waviy {
                 position: relative;
                 -webkit-box-reflect: below -20px linear-gradient(transparent, rgba(0,0,0,.2));
@@ -147,7 +155,6 @@
                 white-space: nowrap;
             }
 
-
             #hints {
                 color: yellow;
             }
@@ -190,8 +197,8 @@
         <div id="overlay-container">
             <div id="time"></div>
             <div id="duration"></div>
-            <div id="working" class="waviy">
-            </div>
+            <div id="working" class="waviy"></div>
+            <div id="selection"></div>
         </div>
 
         <div class="toolbar">
@@ -235,6 +242,11 @@
                     <span class="shortcut" for="undo">CTRL-Z</span>
                 </div>
             </div>
+            <div class="tools">
+                <div class="tool-wrapper">
+                    <button id="start-end-selection" class="tool" disabled title="Start or end the current selection">Start selection</button>
+                </div> 
+            </div>
         </div>
 
         <div id="hints">
@@ -246,9 +258,12 @@
             const MIN_ZOOM = 10
             const MAX_ZOOM = 500
             const TIME_LABEL_SIZE = '16px'
+            const SELECTION_COLOR_TRANSPARENT = 'rgba(221, 213, 233, 0.5)'
 
             let currentRegion
+            let selectedPosition
             let selectedRegion
+            let markedPosition
             let copiedData
 
             async function getAudioForURL(url) {
@@ -925,16 +940,6 @@
                     stopWorking("Saved.")
             }
 
-            async function transcribeAllSegments(lang, editorState, wsRegions) {
-                console.debug("Transcribing all segments", editorState.segments)
-
-                editorState.segments.forEach((segment) => addRegionForSegment(wsRegions, segment))
-                await transcribeSegments(lang, editorState.audioBuffer, editorState.segments, (segment) => {
-                    updateRegionForSegment(wsRegions, segment)
-                })
-
-            }
-
             async function init() {
                 let simplePeer
                 let simplePeerConnected = false
@@ -1048,11 +1053,19 @@
                 })
 
                 wsRegions.enableDragSelection({
-                        color: 'rgba(221, 213, 233, 0.5)',
+                        color: SELECTION_COLOR_TRANSPARENT,
                 })
+
+                function updateSelectionDisplay(region) {
+                    document.getElementById("selection").innerHTML = `<strong>Selection:</strong> ${formatTime(region.start)} - ${formatTime(region.end)}<br><strong>Duration:</strong> ${formatTime(region.end - region.start)}`
+                }
 
                 wsRegions.on('region-created', (region) => {
                     if (region.id.startsWith("segment-")) return
+
+                    if (region.drag && region.resize) {
+                        updateSelectionDisplay(region)
+                    }
 
                     if (currentRegion) {
                         try {
@@ -1074,6 +1087,12 @@
                     reenableActions()
                 })
 
+                wsRegions.on("region-updated", (region) => {
+                    if (region.drag && region.resize) {
+                        updateSelectionDisplay(region)
+                    }
+                })
+
                 wsRegions.on("region-clicked", (region, e) => {
                     if (region.id.startsWith("segment-")) return
                     e.stopPropagation() // prevent triggering a click on the waveform
@@ -1091,6 +1110,7 @@
                     } else {
                         region.remove()
                         currentRegion = undefined
+                        document.getElementById("selection").innerHTML = ""
 
                         reenableActions()
                     }
@@ -1122,6 +1142,7 @@
 
                 waveSurfer.on('interaction', (newTime) => {
                     selectedRegion = findRegionForTime(newTime)
+                    selectedPosition = newTime
                     console.debug('selectedRegion', selectedRegion)
                     reenableActions()
                 });
@@ -1284,15 +1305,11 @@
                 const cutPartCommand = commandFunction("Cutting out selected part", async () => {
                     if (!selectedRegion) return
 
-
                     const [start, end] = [selectedRegion.start, selectedRegion.end]
 
-                    console.debug(wsRegions.getRegions())
                     const nextSegment = wsRegions.getRegions().find((region) => region.start > (end + 0.05))
-                    console.debug("next segment after", end, nextSegment)
 
                     const cutEnd = nextSegment ? nextSegment.start - 0.05 : end
-                    console.debug("cut end", cutEnd)
 
                     selectedRegion.remove()
                     selectedRegion = undefined
