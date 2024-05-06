@@ -267,6 +267,7 @@
             let selectedRegion
             let markedPosition
             let copiedData
+            let cutPartRegion
 
             async function getAudioForURL(url) {
                 const response = await fetch(url)
@@ -1077,7 +1078,7 @@
                 }
 
                 wsRegions.on('region-created', (region) => {
-                    if (region.id.startsWith("segment-")) return
+                    if (region.id.startsWith("segment-") || region.id === "cut-part") return
 
                     if (region.drag && region.resize) {
                         updateSelectionDisplay(region)
@@ -1318,24 +1319,57 @@
 
                 document.getElementById("cut").addEventListener("click", cutCommand.bind(this))
 
-                const cutPartCommand = commandFunction("Cutting out selected part", async () => {
-                    if (!selectedRegion) return
-
+                function getCutPointsForSelectedRegion() {
                     const [start, end] = [selectedRegion.start, selectedRegion.end]
 
                     const nextSegment = wsRegions.getRegions().find((region) => region.start > (end + 0.05))
 
                     const cutEnd = nextSegment ? nextSegment.start - 0.05 : end
 
+                    return [start, cutEnd]
+                }
+
+                document.getElementById("cut-part").addEventListener("mouseover", () => {
+                    if (!selectedRegion) return
+
+                    const [start, end] = getCutPointsForSelectedRegion();
+
+                    const $el = document.createElement("span")
+                    $el.id = "selection-preview"
+                    $el.innerText = "Cut this part"
+                    $el.setAttribute("style", "position: absolute; padding: 220px 5px 0 5px !important; text-align: center !important; color: yellow !important; font-size: 20px !important; font-weight: bold;")
+
+                    cutPartRegion = wsRegions.addRegion({
+                        id: "cut-part",
+                        start,
+                        end,
+                        content: $el,
+                        color: SELECTION_COLOR_TRANSPARENT,
+                    })
+                })
+
+                document.getElementById("cut-part").addEventListener("mouseleave", () => {
+                    if (!cutPartRegion) return
+
+                    cutPartRegion.remove()
+                    cutPartRegion = undefined
+                })
+
+                const cutPartCommand = commandFunction("Cutting out selected part", async () => {
+                    if (!selectedRegion) return
+
+                    const [start, end] = getCutPointsForSelectedRegion();
+
                     selectedRegion.remove()
                     selectedRegion = undefined
+                    cutPartRegion = undefined
                     wsRegions.clearRegions()
 
                     rememberState(editorState, "cut")
 
-                    const overlappingSegments = cutSegments(editorState.segments, start, cutEnd)
+                    const overlappingSegments = cutSegments(editorState.segments, start, end)
 
-                    const result = await cut(editorState.audioBuffer, start, cutEnd)
+                    const result = await cut(editorState.audioBuffer, start, end)
                     editorState.audioBuffer = result[0]
                     copiedData = result[1]
 
@@ -1363,6 +1397,8 @@
                     document.getElementById("paste").disabled = ""
                     document.getElementById("undo").disabled = ""
                 })
+
+                document.getElementById("cut-part").addEventListener("click", cutPartCommand.bind(this))
 
                 document.getElementById("start-end-selection").addEventListener("click", () => {
                     if (!markedPosition) {
@@ -1394,8 +1430,6 @@
                         document.getElementById("start-end-selection").innerText = "Start selection"
                     }
                 })
-
-                document.getElementById("cut-part").addEventListener("click", cutPartCommand.bind(this))
 
                 const trimToSelectionCommand = commandFunction("Trimming audio to the selected range", async () => {
                     if (!currentRegion) return
