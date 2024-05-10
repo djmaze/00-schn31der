@@ -1077,6 +1077,11 @@
                     document.getElementById("selection").innerHTML = `<strong>Selection:</strong> ${formatTime(region.start)} - ${formatTime(region.end)}<br><strong>Duration:</strong> ${formatTime(region.end - region.start)}`
                 }
 
+                function hideSelection() {
+                    currentRegion = undefined
+                    document.getElementById("selection").innerHTML = ""
+                }
+
                 wsRegions.on('region-created', (region) => {
                     if (region.id.startsWith("segment-") || region.id === "cut-part") return
 
@@ -1127,7 +1132,8 @@
                     } else {
                         region.remove()
                         currentRegion = undefined
-                        document.getElementById("selection").innerHTML = ""
+
+                        hideSelection();
 
                         reenableActions()
                     }
@@ -1282,6 +1288,8 @@
                     currentRegion.remove()
                     currentRegion = undefined
 
+                    hideSelection();
+
                     wsRegions.clearRegions()
 
                     rememberState(editorState, "cut")
@@ -1331,6 +1339,8 @@
 
                 document.getElementById("cut-part").addEventListener("mouseover", () => {
                     if (!selectedRegion) return
+
+                    hideSelection();
 
                     const [start, end] = getCutPointsForSelectedRegion();
 
